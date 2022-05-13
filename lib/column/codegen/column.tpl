@@ -89,6 +89,8 @@ func (t Type) Column() (Interface, error) {
 		return &Point{}, nil
 	case "String":
 		return &String{}, nil
+	case "Object(JSON)":
+	    return &JSON{}, nil
 	}
 
 	switch strType := string(t); {
