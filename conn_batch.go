@@ -110,7 +110,7 @@ func (b *batch) Column(idx int) driver.BatchColumn {
 		b.release(nil)
 		return &batchColumn{
 			err: &OpError{
-				Op:  "batch.Column",
+				Op:  "batch.col",
 				Err: fmt.Errorf("invalid column index %d", idx),
 			},
 		}
