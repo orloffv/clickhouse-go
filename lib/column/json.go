@@ -48,26 +48,12 @@ func parseMap() {
 }
 
 func (jCol *JSONObject) parseType(name string, kind reflect.Kind, values interface{}, isArray bool) error {
-	if ct, ok := typeMapping[kind]; ok {
-		if isArray {
-			ct = fmt.Sprintf("Array(%s)", ct)
-		}
-		col, err := Type(ct).Column()
-		if err != nil {
-			return err
-		}
-		vCol := &JSONValue{
-			col:  col,
-			name: name,
-		}
-		jCol.columns = append(jCol.columns, vCol)
-		return nil
+	col, err := jCol.upsetSubValue(name, kind, isArray)
+	if err != nil {
+		return err
 	}
-	return &Error{
-		ColumnType: fmt.Sprint(kind),
-		Err:        fmt.Errorf("unsupported error"),
-	}
-
+	err = col.AppendRow(values)
+	return err
 }
 
 func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) error {
@@ -122,9 +108,8 @@ func (jCol *JSONObject) parseSlice(name string, values interface{}) error {
 		}
 		return nil
 	}
-	return &Error{
-		ColumnType: fmt.Sprint(sKind),
-		Err:        fmt.Errorf("unsupported error"),
+	return &UnsupportedColumnTypeError{
+		t: Type(fmt.Sprint(sKind)),
 	}
 }
 
@@ -136,14 +121,11 @@ func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
 		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			// fetch existing column of this fName - e.g. getStruct check its a struct (if not error) TODO
-			col := &JSONObject{
-				columns: make([]Interface, 0),
-				name:    fName,
-				colType: "Tuple",
+			col, err := jCol.upsertSubObject(fName, "Tuple")
+			if err != nil {
+				return err
 			}
-			jCol.columns = append(jCol.columns, col)
-			err := col.parseStruct(field)
+			err = col.parseStruct(field)
 			if err != nil {
 				return err
 			}
@@ -171,9 +153,8 @@ func (jCol *JSON) AppendStruct(data interface{}) error {
 		}
 		return nil
 	}
-	return &Error{
-		ColumnType: fmt.Sprint(kind),
-		Err:        fmt.Errorf("unsupported error"),
+	return &UnsupportedColumnTypeError{
+		t: Type(fmt.Sprint(kind)),
 	}
 }
 
@@ -236,6 +217,90 @@ type JSONObject struct {
 	columns []Interface
 	name    string
 	colType string
+}
+
+func (jCol *JSONObject) upsertSubObject(name string, fType string) (*JSONObject, error) {
+	// check if it exists
+	for i := range jCol.columns {
+		switch sCol := (jCol.columns[i]).(type) {
+		case *JSONValue:
+			{
+				if sCol.name == name {
+					return nil, &Error{
+						ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+						Err:        fmt.Errorf("type mismatch in column %s", name),
+					}
+				}
+			}
+		case *JSONObject:
+			{
+				if sCol.name == name {
+					return sCol, nil
+				}
+			}
+		default:
+			return nil, &Error{
+				Err:        fmt.Errorf("unexpected type in JSONObject"),
+				ColumnType: string(reflect.ValueOf(sCol).Kind()),
+			}
+		}
+	}
+	// not present so create
+	col := &JSONObject{
+		columns: make([]Interface, 0),
+		name:    name,
+		colType: fType,
+	}
+	jCol.columns = append(jCol.columns, col)
+	return col, nil
+}
+
+func (jCol *JSONObject) upsetSubValue(name string, kind reflect.Kind, isArray bool) (*JSONValue, error) {
+	if ct, ok := typeMapping[kind]; ok {
+		if isArray {
+			ct = fmt.Sprintf("Array(%s)", ct)
+		}
+		for i := range jCol.columns {
+			switch sCol := (jCol.columns[i]).(type) {
+			case *JSONValue:
+				{
+					if sCol.name == name {
+						if sCol.col.Type() != Type(ct) {
+							return nil, &Error{
+								ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+								Err:        fmt.Errorf("type mismatch in column %s", name),
+							}
+						}
+						// return existing column
+						return sCol, nil
+					}
+				}
+			case *JSONObject:
+				{
+					if sCol.name == name {
+						return nil, &Error{
+							ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+							Err:        fmt.Errorf("type mismatch in column %s", name),
+						}
+					}
+				}
+			}
+		}
+		col, err := Type(ct).Column()
+		if err != nil {
+			return nil, err
+		}
+		vCol := &JSONValue{
+			col:  col,
+			name: name,
+		}
+		jCol.columns = append(jCol.columns, vCol)
+		return vCol, nil
+	}
+
+	return nil, &UnsupportedColumnTypeError{
+		t: Type(fmt.Sprint(kind)),
+	}
 }
 
 // TypeMapping utility function to print detected type hierarchy
