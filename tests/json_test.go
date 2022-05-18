@@ -87,6 +87,20 @@ type TestJSONStruct struct {
 	Contributors []Person
 }
 
+type InconsistentPerson struct {
+	Id      string
+	Name    string
+	Address []Address
+	Friend  Friend
+}
+
+type InconsistentTestJSONStruct struct {
+	EventType    string
+	Actor        Person
+	Repo         []string
+	Contributors []InconsistentPerson
+}
+
 func TestIterateStruct(t *testing.T) {
 	col1Data := TestJSONStruct{
 		EventType: "Notify",
@@ -126,6 +140,25 @@ func TestIterateStruct(t *testing.T) {
 	err = cols.AppendStruct(col2Data)
 	assert.NoError(t, err)
 	fmt.Println(cols.TypeMapping())
+	fmt.Println()
+
+	col3Data := InconsistentTestJSONStruct{
+		EventType: "PushEvent",
+		Actor: Person{
+			Id:      2244,
+			Name:    "Dale",
+			Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}},
+			Friend:  Friend{Id: 3244},
+		},
+		Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
+		Contributors: []InconsistentPerson{
+			{Id: "1244", Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
+			{Id: "1244", Name: "Geoff", Address: []Address{{City: "Chicago"}, {City: "NYC"}}, Friend: Friend{Id: 3244}},
+			{Id: "3244", Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
+		},
+	}
+	err = cols.AppendStruct(col3Data)
+	assert.Error(t, err)
 	fmt.Println()
 	bytes, _ := json.Marshal(col1Data)
 	fmt.Println(string(bytes))
