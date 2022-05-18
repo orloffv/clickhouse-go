@@ -52,8 +52,7 @@ func (jCol *JSONObject) parseType(name string, kind reflect.Kind, values interfa
 	if err != nil {
 		return err
 	}
-	err = col.AppendRow(values)
-	return err
+	return col.AppendRow(values)
 }
 
 func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) error {
@@ -93,18 +92,11 @@ func (jCol *JSONObject) parseSlice(name string, values interface{}) error {
 		rValues := reflect.ValueOf(values)
 		//TODO: we need to process all
 		if rValues.Len() > 0 {
-			err := jCol.parseSliceStruct(name, rValues.Index(0))
-			if err != nil {
-				return err
-			}
+			return jCol.parseSliceStruct(name, rValues.Index(0))
 		}
 		return nil
 	} else {
-		err := jCol.parseType(name, sKind, values, true)
-		if err != nil {
-			return err
-		}
-		return nil
+		return jCol.parseType(name, sKind, values, true)
 	}
 	return &UnsupportedColumnTypeError{
 		t: Type(fmt.Sprint(sKind)),
@@ -145,11 +137,7 @@ func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
 func (jCol *JSON) AppendStruct(data interface{}) error {
 	kind := reflect.ValueOf(data).Kind()
 	if kind == reflect.Struct {
-		err := jCol.parseStruct(reflect.ValueOf(data))
-		if err != nil {
-			return err
-		}
-		return nil
+		return jCol.parseStruct(reflect.ValueOf(data))
 	}
 	return &UnsupportedColumnTypeError{
 		t: Type(fmt.Sprint(kind)),
@@ -374,11 +362,7 @@ func (jCol *JSONObject) AppendRow(v interface{}) error {
 
 func (jCol *JSON) AppendRow(v interface{}) error {
 	if reflect.ValueOf(v).Kind() == reflect.Struct {
-		err := jCol.AppendStruct(v)
-		if err != nil {
-			return err
-		}
-		return nil
+		return jCol.AppendStruct(v)
 	}
 	// TODO: support strings and maps
 	return &Error{
