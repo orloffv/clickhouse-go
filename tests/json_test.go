@@ -38,7 +38,16 @@ func TestJSON(t *testing.T) {
 				col1Data := TestJSONStruct{
 					EventType: "PushEvent",
 					Actor: Person{
-						Id: 93110249,
+						Id:      1244,
+						Name:    "Geoff",
+						Address: []Address{{City: "Chicago"}, {City: "NYC"}},
+						Friend:  Friend{Id: 3244},
+					},
+					Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
+					Contributors: []Person{
+						{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
+						{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}}, Friend: Friend{Id: 3244}},
+						{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
 					},
 				}
 				if err := batch.Append(col1Data); assert.NoError(t, err) {
@@ -57,67 +66,18 @@ func TestJSON(t *testing.T) {
 
 }
 
-func parseJSON(key string, v interface{}, cols []column.Interface) {
-	switch node := v.(type) {
-	case map[string]interface{}:
-		if key != "" {
-			fmt.Printf("%s: (", key)
-		}
-		i := 0
-		len := len(node)
-		for key, sub := range node {
-			parseJSON(key, sub, cols)
-			i++
-			if i != len {
-				fmt.Printf(", ")
-			}
-		}
-		if key != "" {
-			fmt.Print(")")
-		}
-	case []interface{}:
-		fmt.Printf("%s: [", key)
-		for i, val := range node {
-			switch tval := val.(type) {
-			case string:
-				fmt.Printf("%q", tval)
-			default:
-				fmt.Printf("%v", tval)
-			}
-
-			i++
-			if i != len(node) {
-				fmt.Printf(", ")
-			}
-		}
-		fmt.Printf("]")
-	case string:
-		fmt.Printf("%s: %q", key, v)
-	default:
-		fmt.Printf("%s: %v", key, v)
-
-	}
-}
-
-func TestJSONParse(t *testing.T) {
-	src := `{"login":{"password":"secret","user":"bob", "random": 1},"name":"cmpA", "nested": {"value": 1, "value_2": 2}, "a_list":["1", 2, 4], "str_list": ["h", "a"]}`
-	var v map[string]interface{}
-	if err := json.Unmarshal([]byte(src), &v); err != nil {
-		panic(err)
-	}
-	columns := make([]column.Interface, 0)
-	parseJSON("", v, columns)
-	fmt.Println()
-}
-
 type Address struct {
 	City string
 }
 
+type Friend struct {
+	Id uint64
+}
 type Person struct {
 	Id      uint64
 	Name    string
-	Address Address
+	Address []Address
+	Friend  Friend
 }
 
 type TestJSONStruct struct {
@@ -133,20 +93,22 @@ func TestIterateStruct(t *testing.T) {
 		Actor: Person{
 			Id:      1244,
 			Name:    "Geoff",
-			Address: Address{City: "Chicago"},
+			Address: []Address{{City: "Chicago"}, {City: "NYC"}},
+			Friend:  Friend{Id: 3244},
 		},
 		Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
 		Contributors: []Person{
-			{Id: 1244, Name: "Thom", Address: Address{City: "Denver"}},
-			{Id: 2244, Name: "Dale", Address: Address{City: "Lisbon"}},
-			{Id: 3244, Name: "Melvyn", Address: Address{City: "Paris"}},
+			{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
+			{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}}, Friend: Friend{Id: 3244}},
+			{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
 		},
 	}
 
 	fmt.Println()
-	cols, err := column.ParseJSON(col1Data)
+	cols := &column.JSON{}
+	err := cols.AppendStruct(col1Data)
 	assert.NoError(t, err)
-	fmt.Println(cols.Type())
+	fmt.Println(cols.TypeMapping())
 	fmt.Println()
 	bytes, _ := json.Marshal(col1Data)
 	fmt.Println(string(bytes))

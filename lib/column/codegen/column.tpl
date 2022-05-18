@@ -89,7 +89,7 @@ func (t Type) Column() (Interface, error) {
 		return &Point{}, nil
 	case "String":
 		return &String{}, nil
-	case "Object(JSON)":
+	case "Object('json')":
 	    return &JSON{}, nil
 	}
 

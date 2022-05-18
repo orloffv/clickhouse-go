@@ -42,96 +42,93 @@ var typeMapping = map[reflect.Kind]string{
 	reflect.Bool:    "Boolean",
 }
 
+//TODO
 func parseMap() {
 
 }
 
-func parseType(name string, kind reflect.Kind) (*JSONValue, error) {
+func (jCol *JSONObject) parseType(name string, kind reflect.Kind, values interface{}, isArray bool) error {
 	if ct, ok := typeMapping[kind]; ok {
+		if isArray {
+			ct = fmt.Sprintf("Array(%s)", ct)
+		}
 		col, err := Type(ct).Column()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		jsonCol := JSONValue{
+		vCol := &JSONValue{
 			col:  col,
 			name: name,
 		}
-		return &jsonCol, nil
+		jCol.columns = append(jCol.columns, vCol)
+		return nil
 	}
-	return nil, &Error{
+	return &Error{
 		ColumnType: fmt.Sprint(kind),
 		Err:        fmt.Errorf("unsupported error"),
 	}
+
 }
 
-func parseSliceStruct(name string, structVal reflect.Value) (*JSONObject, error) {
-	t := make([]Interface, 0)
+func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) error {
+	col := &JSONObject{
+		name:    name,
+		columns: make([]Interface, 0),
+		colType: "Nested",
+	}
+	jCol.columns = append(jCol.columns, col)
+
 	for i := 0; i < structVal.NumField(); i++ {
 		field := structVal.Field(i)
 		kind := field.Kind()
 		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			col, err := ParseStruct(fName, field)
+			err := col.parseStruct(field)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			t = append(t, col)
 		} else if kind == reflect.Slice {
-			cols, err := parseSlice(fName, value)
+			err := col.parseSlice(fName, value)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			t = append(t, cols)
 		} else {
-			col, err := parseType(fName, kind)
+			err := col.parseType(fName, kind, value, false)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			t = append(t, col)
 		}
 	}
-	return &JSONObject{
-		name:    name,
-		columns: t,
-		colType: "Nested",
-	}, nil
+	return nil
 }
 
-func parseSlice(name string, values interface{}) (Interface, error) {
+func (jCol *JSONObject) parseSlice(name string, values interface{}) error {
 	sKind := reflect.TypeOf(values).Elem().Kind()
-	// need to handle array of structs ouch TODO - how to handle slices of objects
 	if sKind == reflect.Struct {
 		rValues := reflect.ValueOf(values)
+		//TODO: we need to process all
 		if rValues.Len() > 0 {
-			col, err := parseSliceStruct(name, rValues.Index(0))
+			err := jCol.parseSliceStruct(name, rValues.Index(0))
 			if err != nil {
-				return nil, err
+				return err
 			}
-			return col, nil
 		}
-		return &JSONValue{}, nil
-	} else if ct, ok := typeMapping[sKind]; ok {
-		ct := fmt.Sprintf("Array(%s)", ct)
-		// this is acceptable for an array with a primitive type has lowest depth of recursion
-		col, err := Type(ct).Column()
+		return nil
+	} else {
+		err := jCol.parseType(name, sKind, values, true)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		jsonCol := JSONValue{
-			col:  col,
-			name: name,
-		}
-		return &jsonCol, nil
+		return nil
 	}
-	return nil, &Error{
+	return &Error{
 		ColumnType: fmt.Sprint(sKind),
 		Err:        fmt.Errorf("unsupported error"),
 	}
 }
 
-func ParseStruct(name string, structVal reflect.Value) (*JSONObject, error) {
-	t := make([]Interface, 0)
+func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
 	for i := 0; i < structVal.NumField(); i++ {
 		// handle the fields in the struct
 		field := structVal.Field(i)
@@ -139,42 +136,42 @@ func ParseStruct(name string, structVal reflect.Value) (*JSONObject, error) {
 		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			col, err := ParseStruct(fName, field)
-			if err != nil {
-				return nil, err
+			// fetch existing column of this fName - e.g. getStruct check its a struct (if not error) TODO
+			col := &JSONObject{
+				columns: make([]Interface, 0),
+				name:    fName,
+				colType: "Tuple",
 			}
-			t = append(t, col)
+			jCol.columns = append(jCol.columns, col)
+			err := col.parseStruct(field)
+			if err != nil {
+				return err
+			}
 		} else if kind == reflect.Slice {
-			cols, err := parseSlice(fName, value)
+			err := jCol.parseSlice(fName, value)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			t = append(t, cols)
 		} else {
-			col, err := parseType(fName, kind)
+			err := jCol.parseType(fName, kind, value, false)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			t = append(t, col)
 		}
 	}
-	return &JSONObject{
-		columns: t,
-		name:    name,
-		colType: "Tuple",
-	}, nil
+	return nil
 }
 
-func ParseJSON(data interface{}) (*JSON, error) {
+func (jCol *JSON) AppendStruct(data interface{}) error {
 	kind := reflect.ValueOf(data).Kind()
 	if kind == reflect.Struct {
-		jCol, err := ParseStruct("", reflect.ValueOf(data))
+		err := jCol.parseStruct(reflect.ValueOf(data))
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return &JSON{*jCol}, nil
+		return nil
 	}
-	return nil, &Error{
+	return &Error{
 		ColumnType: fmt.Sprint(kind),
 		Err:        fmt.Errorf("unsupported error"),
 	}
@@ -214,8 +211,13 @@ func (jCol *JSONValue) Decode(decoder *binary.Decoder, rows int) error {
 }
 
 func (jCol *JSONValue) Encode(encoder *binary.Encoder) error {
-	// output name and type! TODO
-	panic("implement me")
+	if err := encoder.String(jCol.name); err != nil {
+		return err
+	}
+	if err := encoder.String(string(jCol.col.Type())); err != nil {
+		return err
+	}
+	return jCol.col.Encode(encoder)
 }
 
 func (jCol *JSONValue) ScanType() reflect.Type {
@@ -226,22 +228,35 @@ type JSON struct {
 	JSONObject
 }
 
+func (jCol *JSON) Type() Type {
+	return "Object('json')"
+}
+
 type JSONObject struct {
 	columns []Interface
 	name    string
 	colType string
 }
 
-func (jCol *JSONObject) Type() Type {
+// TypeMapping utility function to print detected type hierarchy
+func (jCol *JSONObject) TypeMapping() Type {
 	subTypes := make([]string, len(jCol.columns))
 	for i, v := range jCol.columns {
-		// needs NAME TODO
-		subTypes[i] = string(v.Type())
+		switch v.(type) {
+		case *JSONObject:
+			subTypes[i] = string(v.(*JSONObject).TypeMapping())
+		default:
+			subTypes[i] = string(v.Type())
+		}
 	}
 	if jCol.name != "" {
 		return Type(fmt.Sprintf("%s %s(%s)", jCol.name, jCol.colType, strings.Join(subTypes, ", ")))
 	}
 	return Type(fmt.Sprintf("%s(%s)", jCol.colType, strings.Join(subTypes, ", ")))
+}
+
+func (jCol *JSONObject) Type() Type {
+	return Type(jCol.colType)
 }
 
 func (jCol *JSONObject) ScanType() reflect.Type {
@@ -287,11 +302,25 @@ func (jCol *JSONObject) Append(v interface{}) (nulls []uint8, err error) {
 
 func (jCol *JSONObject) AppendRow(v interface{}) error {
 	if reflect.ValueOf(v).Kind() == reflect.Struct {
-
-		return nil
+		panic("Implement me")
 	} else {
 		// handle string here and maybe map
 		panic("Implement me")
+	}
+}
+
+func (jCol *JSON) AppendRow(v interface{}) error {
+	if reflect.ValueOf(v).Kind() == reflect.Struct {
+		err := jCol.AppendStruct(v)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	// TODO: support strings and maps
+	return &Error{
+		ColumnType: fmt.Sprint(reflect.ValueOf(v).Kind()),
+		Err:        fmt.Errorf("unsupported error"),
 	}
 }
 
