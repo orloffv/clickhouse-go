@@ -8,20 +8,25 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"time"
 )
+
+type SimpleStruct struct {
+	Name string
+}
 
 func TestJSON(t *testing.T) {
 	var (
 		ctx       = context.Background()
 		conn, err = clickhouse.Open(&clickhouse.Options{
-			Addr: []string{"127.0.0.1:9000"},
+			Addr:        []string{"127.0.0.1:9000"},
+			DialTimeout: time.Hour,
 			Auth: clickhouse.Auth{
 				Database: "default",
 				Username: "default",
 				Password: "",
 			}, Settings: clickhouse.Settings{
 				"allow_experimental_object_type": 1,
-				"describe_extend_object_types":   1,
 			},
 		})
 	)
@@ -35,20 +40,8 @@ func TestJSON(t *testing.T) {
 		if err := conn.Exec(ctx, ddl); assert.NoError(t, err) {
 			if batch, err := conn.PrepareBatch(ctx, "INSERT INTO json_test"); assert.NoError(t, err) {
 
-				col1Data := TestJSONStruct{
-					EventType: "PushEvent",
-					Actor: Person{
-						Id:      1244,
-						Name:    "Geoff",
-						Address: []Address{{City: "Chicago"}, {City: "NYC"}},
-						Friend:  Friend{Id: 3244},
-					},
-					Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-					Contributors: []Person{
-						{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
-						{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}}, Friend: Friend{Id: 3244}},
-						{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
-					},
+				col1Data := SimpleStruct{
+					Name: "Dale",
 				}
 				if err := batch.Append(col1Data); assert.NoError(t, err) {
 					if assert.NoError(t, batch.Send()) {

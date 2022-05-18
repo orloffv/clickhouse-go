@@ -60,7 +60,6 @@ func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) e
 	if err != nil {
 		return err
 	}
-
 	for i := 0; i < structVal.NumField(); i++ {
 		field := structVal.Field(i)
 		kind := field.Kind()
