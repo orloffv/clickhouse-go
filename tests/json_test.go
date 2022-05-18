@@ -89,14 +89,12 @@ type TestJSONStruct struct {
 
 func TestIterateStruct(t *testing.T) {
 	col1Data := TestJSONStruct{
-		EventType: "PushEvent",
+		EventType: "Notify",
 		Actor: Person{
 			Id:      1244,
 			Name:    "Geoff",
 			Address: []Address{{City: "Chicago"}, {City: "NYC"}},
-			Friend:  Friend{Id: 3244},
 		},
-		Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
 		Contributors: []Person{
 			{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
 			{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}}, Friend: Friend{Id: 3244}},
@@ -107,6 +105,25 @@ func TestIterateStruct(t *testing.T) {
 	fmt.Println()
 	cols := &column.JSON{}
 	err := cols.AppendStruct(col1Data)
+	assert.NoError(t, err)
+	fmt.Println(cols.TypeMapping())
+
+	col2Data := TestJSONStruct{
+		EventType: "PushEvent",
+		Actor: Person{
+			Id:      2244,
+			Name:    "Dale",
+			Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}},
+			Friend:  Friend{Id: 3244},
+		},
+		Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
+		Contributors: []Person{
+			{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
+			{Id: 1244, Name: "Geoff", Address: []Address{{City: "Chicago"}, {City: "NYC"}}, Friend: Friend{Id: 3244}},
+			{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
+		},
+	}
+	err = cols.AppendStruct(col2Data)
 	assert.NoError(t, err)
 	fmt.Println(cols.TypeMapping())
 	fmt.Println()
