@@ -57,12 +57,10 @@ func (jCol *JSONObject) parseType(name string, kind reflect.Kind, values interfa
 }
 
 func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) error {
-	col := &JSONObject{
-		name:    name,
-		columns: make([]Interface, 0),
-		colType: "Nested",
+	col, err := jCol.upsertSubObject(name, "Nested")
+	if err != nil {
+		return err
 	}
-	jCol.columns = append(jCol.columns, col)
 
 	for i := 0; i < structVal.NumField(); i++ {
 		field := structVal.Field(i)
