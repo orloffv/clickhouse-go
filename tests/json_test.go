@@ -7,7 +7,6 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column"
 	"github.com/stretchr/testify/assert"
-	"reflect"
 	"testing"
 )
 
@@ -38,7 +37,7 @@ func TestJSON(t *testing.T) {
 
 				col1Data := TestJSONStruct{
 					EventType: "PushEvent",
-					Actor: Actor{
+					Actor: Person{
 						Id: 93110249,
 					},
 				}
@@ -111,37 +110,45 @@ func TestJSONParse(t *testing.T) {
 	fmt.Println()
 }
 
-type Actor struct {
-	Id uint64
+type Address struct {
+	City string
+}
+
+type Person struct {
+	Id      uint64
+	Name    string
+	Address Address
 }
 
 type TestJSONStruct struct {
 	EventType    string
-	Actor        Actor
+	Actor        Person
 	Repo         []string
-	Contributors []Actor
+	Contributors []Person
 }
 
 func TestIterateStruct(t *testing.T) {
 	col1Data := TestJSONStruct{
 		EventType: "PushEvent",
-		Actor: Actor{
-			Id: 1244,
+		Actor: Person{
+			Id:      1244,
+			Name:    "Geoff",
+			Address: Address{City: "Chicago"},
 		},
 		Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-		Contributors: []Actor{
-			{Id: 1244},
-			{Id: 2244},
-			{Id: 3244},
+		Contributors: []Person{
+			{Id: 1244, Name: "Thom", Address: Address{City: "Denver"}},
+			{Id: 2244, Name: "Dale", Address: Address{City: "Lisbon"}},
+			{Id: 3244, Name: "Melvyn", Address: Address{City: "Paris"}},
 		},
 	}
 
-	if reflect.ValueOf(col1Data).Kind() == reflect.Struct {
-		fmt.Println()
-		v := reflect.ValueOf(&col1Data).Elem()
-		cols, err := column.ParseStruct(v)
-		assert.NoError(t, err)
-		fmt.Println(cols.Type())
-		fmt.Println()
-	}
+	fmt.Println()
+	cols, err := column.ParseJSON(col1Data)
+	assert.NoError(t, err)
+	fmt.Println(cols.Type())
+	fmt.Println()
+	bytes, _ := json.Marshal(col1Data)
+	fmt.Println(string(bytes))
+
 }

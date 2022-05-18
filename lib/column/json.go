@@ -64,29 +64,56 @@ func parseType(name string, kind reflect.Kind) (*JSONValue, error) {
 	}
 }
 
-func parseSlice(name string, values interface{}) (*JSONValue, error) {
+func parseSliceStruct(name string, structVal reflect.Value) (*JSONObject, error) {
+	t := make([]Interface, 0)
+	for i := 0; i < structVal.NumField(); i++ {
+		field := structVal.Field(i)
+		kind := field.Kind()
+		fName := structVal.Type().Field(i).Name
+		value := field.Interface()
+		if kind == reflect.Struct {
+			col, err := ParseStruct(fName, field)
+			if err != nil {
+				return nil, err
+			}
+			t = append(t, col)
+		} else if kind == reflect.Slice {
+			cols, err := parseSlice(fName, value)
+			if err != nil {
+				return nil, err
+			}
+			t = append(t, cols)
+		} else {
+			col, err := parseType(fName, kind)
+			if err != nil {
+				return nil, err
+			}
+			t = append(t, col)
+		}
+	}
+	return &JSONObject{
+		name:    name,
+		columns: t,
+		colType: "Nested",
+	}, nil
+}
+
+func parseSlice(name string, values interface{}) (Interface, error) {
 	sKind := reflect.TypeOf(values).Elem().Kind()
 	// need to handle array of structs ouch TODO - how to handle slices of objects
 	if sKind == reflect.Struct {
 		rValues := reflect.ValueOf(values)
 		if rValues.Len() > 0 {
-			col, err := ParseStruct(rValues.Index(0))
+			col, err := parseSliceStruct(name, rValues.Index(0))
 			if err != nil {
 				return nil, err
 			}
-			ct := fmt.Sprintf("Array(%s)", col.Type())
-			arrayCol, err := Type(ct).Column()
-			if err != nil {
-				return nil, err
-			}
-			jsonCol := JSONValue{
-				col:  arrayCol,
-				name: name,
-			}
-			return &jsonCol, nil
+			return col, nil
 		}
+		return &JSONValue{}, nil
 	} else if ct, ok := typeMapping[sKind]; ok {
 		ct := fmt.Sprintf("Array(%s)", ct)
+		// this is acceptable for an array with a primitive type has lowest depth of recursion
 		col, err := Type(ct).Column()
 		if err != nil {
 			return nil, err
@@ -103,28 +130,28 @@ func parseSlice(name string, values interface{}) (*JSONValue, error) {
 	}
 }
 
-func ParseStruct(structVal reflect.Value) (*JSONObject, error) {
+func ParseStruct(name string, structVal reflect.Value) (*JSONObject, error) {
 	t := make([]Interface, 0)
 	for i := 0; i < structVal.NumField(); i++ {
 		// handle the fields in the struct
 		field := structVal.Field(i)
 		kind := field.Kind()
-		name := structVal.Type().Field(i).Name
+		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			col, err := ParseStruct(field)
+			col, err := ParseStruct(fName, field)
 			if err != nil {
 				return nil, err
 			}
 			t = append(t, col)
 		} else if kind == reflect.Slice {
-			cols, err := parseSlice(name, value)
+			cols, err := parseSlice(fName, value)
 			if err != nil {
 				return nil, err
 			}
 			t = append(t, cols)
 		} else {
-			col, err := parseType(name, kind)
+			col, err := parseType(fName, kind)
 			if err != nil {
 				return nil, err
 			}
@@ -133,7 +160,24 @@ func ParseStruct(structVal reflect.Value) (*JSONObject, error) {
 	}
 	return &JSONObject{
 		columns: t,
+		name:    name,
+		colType: "Tuple",
 	}, nil
+}
+
+func ParseJSON(data interface{}) (*JSON, error) {
+	kind := reflect.ValueOf(data).Kind()
+	if kind == reflect.Struct {
+		jCol, err := ParseStruct("", reflect.ValueOf(data))
+		if err != nil {
+			return nil, err
+		}
+		return &JSON{*jCol}, nil
+	}
+	return nil, &Error{
+		ColumnType: fmt.Sprint(kind),
+		Err:        fmt.Errorf("unsupported error"),
+	}
 }
 
 type JSONValue struct {
@@ -178,44 +222,52 @@ func (jCol *JSONValue) ScanType() reflect.Type {
 	return jCol.col.ScanType()
 }
 
-type JSONObject struct {
-	columns []Interface
+type JSON struct {
+	JSONObject
 }
 
-func (col *JSONObject) Type() Type {
-	subTypes := make([]string, len(col.columns))
-	for i, v := range col.columns {
+type JSONObject struct {
+	columns []Interface
+	name    string
+	colType string
+}
+
+func (jCol *JSONObject) Type() Type {
+	subTypes := make([]string, len(jCol.columns))
+	for i, v := range jCol.columns {
 		// needs NAME TODO
 		subTypes[i] = string(v.Type())
 	}
-	ct := fmt.Sprintf("Tuple(%s)", strings.Join(subTypes, ", "))
-	return Type(ct)
+	if jCol.name != "" {
+		return Type(fmt.Sprintf("%s %s(%s)", jCol.name, jCol.colType, strings.Join(subTypes, ", ")))
+	}
+	return Type(fmt.Sprintf("%s(%s)", jCol.colType, strings.Join(subTypes, ", ")))
 }
 
-func (col *JSONObject) ScanType() reflect.Type {
+func (jCol *JSONObject) ScanType() reflect.Type {
 	return scanTypeSlice
 }
 
-func (col *JSONObject) Rows() int {
-	if len(col.columns) != 0 {
-		return col.columns[0].Rows()
+func (jCol *JSONObject) Rows() int {
+	if len(jCol.columns) != 0 {
+		return jCol.columns[0].Rows()
 	}
 	return 0
 }
 
-func (col *JSONObject) Row(i int, ptr bool) interface{} {
-	tuple := make([]interface{}, 0, len(col.columns))
-	for _, c := range col.columns {
+func (jCol *JSONObject) Row(i int, ptr bool) interface{} {
+	tuple := make([]interface{}, 0, len(jCol.columns))
+	for _, c := range jCol.columns {
 		tuple = append(tuple, c.Row(i, ptr))
 	}
 	return tuple
 }
 
-func (col *JSONObject) ScanRow(dest interface{}, row int) error {
+func (jCol *JSONObject) ScanRow(dest interface{}, row int) error {
 	switch d := dest.(type) {
 	case *[]interface{}:
-		tuple := make([]interface{}, 0, len(col.columns))
-		for _, c := range col.columns {
+		tuple := make([]interface{}, 0, len(jCol.columns))
+		for _, c := range jCol.columns {
 			tuple = append(tuple, c.Row(row, false))
 		}
 		*d = tuple
@@ -223,17 +275,17 @@ func (col *JSONObject) ScanRow(dest interface{}, row int) error {
 		return &ColumnConverterError{
 			Op:   "ScanRow",
 			To:   fmt.Sprintf("%T", dest),
-			From: string(col.Type()),
+			From: string(jCol.Type()),
 		}
 	}
 	return nil
 }
 
-func (col *JSONObject) Append(v interface{}) (nulls []uint8, err error) {
+func (jCol *JSONObject) Append(v interface{}) (nulls []uint8, err error) {
 	panic("Implement me")
 }
 
-func (col *JSONObject) AppendRow(v interface{}) error {
+func (jCol *JSONObject) AppendRow(v interface{}) error {
 	if reflect.ValueOf(v).Kind() == reflect.Struct {
 
 		return nil
@@ -243,8 +295,8 @@ func (col *JSONObject) AppendRow(v interface{}) error {
 	}
 }
 
-func (col *JSONObject) Decode(decoder *binary.Decoder, rows int) error {
-	for _, c := range col.columns {
+func (jCol *JSONObject) Decode(decoder *binary.Decoder, rows int) error {
+	for _, c := range jCol.columns {
 		if err := c.Decode(decoder, rows); err != nil {
 			return err
 		}
@@ -252,8 +304,8 @@ func (col *JSONObject) Decode(decoder *binary.Decoder, rows int) error {
 	return nil
 }
 
-func (col *JSONObject) Encode(encoder *binary.Encoder) error {
-	for _, c := range col.columns {
+func (jCol *JSONObject) Encode(encoder *binary.Encoder) error {
+	for _, c := range jCol.columns {
 		if err := c.Encode(encoder); err != nil {
 			return err
 		}
