@@ -124,9 +124,6 @@ func parseStruct(name string, structVal reflect.Value, jCol JSON) error {
 		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			if err != nil {
-				return err
-			}
 			err = parseStruct(fName, field, col)
 			if err != nil {
 				return err
@@ -149,7 +146,31 @@ func parseStruct(name string, structVal reflect.Value, jCol JSON) error {
 func AppendStruct(jCol *JSONObject, data interface{}) error {
 	kind := reflect.ValueOf(data).Kind()
 	if kind == reflect.Struct {
-		return parseStruct("", reflect.ValueOf(data), jCol)
+		rStruct := reflect.ValueOf(data)
+		for i := 0; i < rStruct.NumField(); i++ {
+			// handle the fields in the struct
+			field := rStruct.Field(i)
+			kind := field.Kind()
+			fName := rStruct.Type().Field(i).Name
+			value := field.Interface()
+			if kind == reflect.Struct {
+				err := parseStruct(fName, field, jCol)
+				if err != nil {
+					return err
+				}
+			} else if kind == reflect.Slice {
+				err := parseSlice(fName, value, jCol)
+				if err != nil {
+					return err
+				}
+			} else {
+				err := parseType(fName, kind, value, false, jCol)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
 	return &UnsupportedColumnTypeError{
 		t: Type(fmt.Sprint(kind)),
