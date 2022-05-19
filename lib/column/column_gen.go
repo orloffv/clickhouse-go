@@ -106,7 +106,7 @@ func (t Type) Column() (Interface, error) {
 	case "String":
 		return &String{}, nil
 	case "Object('json')":
-		return &JSONObject{colType: "Tuple"}, nil
+		return &JSONObject{}, nil
 	}
 
 	switch strType := string(t); {

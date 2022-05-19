@@ -43,11 +43,11 @@ func TestJSON(t *testing.T) {
 				col1Data := TestJSONStruct{
 					EventType: "Notify",
 					Actor: Person{
-						Id:     1244,
-						Name:   "Geoff",
-						Friend: Friend{Id: 3244},
-						/*			Address: []Address{{City: "Chicago"}, {City: "NYC"}},
-						 */},
+						Id:      1244,
+						Name:    "Geoff",
+						Friend:  Friend{Id: 3244},
+						Address: []Address{{City: "Denver"}},
+					},
 					/*Contributors: []Person{
 						{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
 						{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}}, Friend: Friend{Id: 3244}},
@@ -87,10 +87,10 @@ func TestJSONImitate(t *testing.T) {
 		})
 	)
 	conn.Exec(ctx, "DROP TABLE json_test")
-	ddl := `CREATE table json_test(event Tuple(EventType String, Actor Tuple(Id UInt64, Name String, Friend Tuple(Id UInt64)))) ENGINE=Memory;`
+	ddl := `CREATE table json_test(event Tuple(EventType String, Actor Tuple(Id UInt64, Name String, Address Nested(City String), Friend Tuple(Id UInt64)))) ENGINE=Memory;`
 	if assert.NoError(t, err) {
 		if err := conn.Exec(ctx, ddl); assert.NoError(t, err) {
-			col1Data := []interface{}{"Notify", []interface{}{uint64(1244), "Geoff", []interface{}{uint64(3244)}}}
+			col1Data := []interface{}{"Notify", []interface{}{uint64(1244), "Geoff", [][]interface{}{{"Denver"}}, []interface{}{uint64(3244)}}}
 			if batch, err := conn.PrepareBatch(ctx, "INSERT INTO json_test"); assert.NoError(t, err) {
 				if err := batch.Append(col1Data); assert.NoError(t, err) {
 					if assert.NoError(t, batch.Send()) {
@@ -110,10 +110,10 @@ type Friend struct {
 	Id uint64
 }
 type Person struct {
-	Id   uint64
-	Name string
-	/*	Address []Address*/
-	Friend Friend
+	Id      uint64
+	Name    string
+	Address []Address
+	Friend  Friend
 }
 
 type TestJSONStruct struct {
@@ -141,22 +141,25 @@ func TestIterateStruct(t *testing.T) {
 	col1Data := TestJSONStruct{
 		EventType: "Notify",
 		Actor: Person{
-			Id:   1244,
-			Name: "Geoff",
-			/*			Address: []Address{{City: "Chicago"}, {City: "NYC"}},
-			 */},
-		/*Contributors: []Person{
+			Id:      1244,
+			Name:    "Geoff",
+			Address: []Address{{City: "Chicago"}, {City: "NYC"}},
+			//Nested(City String) -> Array(Tuple(City String))
+		},
+		Contributors: []Person{
 			{Id: 1244, Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
 			{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}}, Friend: Friend{Id: 3244}},
 			{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
-		},*/
+		},
 	}
 
 	fmt.Println()
 	cols := &column.JSONObject{}
-	err := cols.AppendStruct(col1Data)
+	err := column.AppendStruct(cols, col1Data)
 	assert.NoError(t, err)
 	fmt.Println(cols.Type())
+	bytes, _ := json.Marshal(col1Data)
+	fmt.Println(string(bytes))
 
 	col2Data := TestJSONStruct{
 		EventType: "PushEvent",
@@ -173,7 +176,7 @@ func TestIterateStruct(t *testing.T) {
 			{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
 		},*/
 	}
-	err = cols.AppendStruct(col2Data)
+	err = column.AppendStruct(cols, col2Data)
 	assert.NoError(t, err)
 	fmt.Println(cols.Type())
 	fmt.Println()
@@ -193,10 +196,8 @@ func TestIterateStruct(t *testing.T) {
 			{Id: "3244", Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
 		},*/
 	}
-	err = cols.AppendStruct(col3Data)
+	err = column.AppendStruct(cols, col3Data)
 	assert.Error(t, err)
 	fmt.Println()
-	bytes, _ := json.Marshal(col1Data)
-	fmt.Println(string(bytes))
 
 }

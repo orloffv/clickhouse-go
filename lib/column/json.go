@@ -47,16 +47,26 @@ func parseMap() {
 
 }
 
-func (jCol *JSONObject) parseType(name string, kind reflect.Kind, values interface{}, isArray bool) error {
-	col, err := jCol.upsetSubValue(name, kind, isArray)
+type NamedInterface interface {
+	Name() string
+}
+
+type JSON interface {
+	upsertValue(name string, kind reflect.Kind, isArray bool) (*JSONValue, error)
+	upsertList(name string) (*JSONList, error)
+	upsertObject(name string) (*JSONObject, error)
+}
+
+func parseType(name string, kind reflect.Kind, values interface{}, isArray bool, jCol JSON) error {
+	col, err := jCol.upsertValue(name, kind, isArray)
 	if err != nil {
 		return err
 	}
 	return col.AppendRow(values)
 }
 
-func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) error {
-	col, err := jCol.upsertSubObject(name, "Nested")
+func parseSliceStruct(name string, structVal reflect.Value, jCol JSON) error {
+	col, err := jCol.upsertList(name)
 	if err != nil {
 		return err
 	}
@@ -66,43 +76,47 @@ func (jCol *JSONObject) parseSliceStruct(name string, structVal reflect.Value) e
 		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			err := col.parseStruct(field)
+			err := parseStruct(fName, field, col)
 			if err != nil {
 				return err
 			}
 		} else if kind == reflect.Slice {
-			err := col.parseSlice(fName, value)
+			err := parseSlice(fName, value, col)
 			if err != nil {
 				return err
 			}
 		} else {
-			err := col.parseType(fName, kind, value, false)
+			err := parseType(fName, kind, value, false, col)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return col.updateOffsets()
 }
 
-func (jCol *JSONObject) parseSlice(name string, values interface{}) error {
+func parseSlice(name string, values interface{}, jCol JSON) error {
 	sKind := reflect.TypeOf(values).Elem().Kind()
 	if sKind == reflect.Struct {
 		rValues := reflect.ValueOf(values)
 		//TODO: we need to process all
 		if rValues.Len() > 0 {
-			return jCol.parseSliceStruct(name, rValues.Index(0))
+			return parseSliceStruct(name, rValues.Index(0), jCol)
 		}
 		return nil
 	} else {
-		return jCol.parseType(name, sKind, values, true)
+		return parseType(name, sKind, values, true, jCol)
 	}
 	return &UnsupportedColumnTypeError{
 		t: Type(fmt.Sprint(sKind)),
 	}
 }
 
-func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
+func parseStruct(name string, structVal reflect.Value, jCol JSON) error {
+	col, err := jCol.upsertObject(name)
+	if err != nil {
+		return err
+	}
 	for i := 0; i < structVal.NumField(); i++ {
 		// handle the fields in the struct
 		field := structVal.Field(i)
@@ -110,21 +124,20 @@ func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
 		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
-			col, err := jCol.upsertSubObject(fName, "Tuple")
 			if err != nil {
 				return err
 			}
-			err = col.parseStruct(field)
+			err = parseStruct(fName, field, col)
 			if err != nil {
 				return err
 			}
 		} else if kind == reflect.Slice {
-			err := jCol.parseSlice(fName, value)
+			err := parseSlice(fName, value, col)
 			if err != nil {
 				return err
 			}
 		} else {
-			err := jCol.parseType(fName, kind, value, false)
+			err := parseType(fName, kind, value, false, col)
 			if err != nil {
 				return err
 			}
@@ -133,10 +146,10 @@ func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
 	return nil
 }
 
-func (jCol *JSONObject) AppendStruct(data interface{}) error {
+func AppendStruct(jCol *JSONObject, data interface{}) error {
 	kind := reflect.ValueOf(data).Kind()
 	if kind == reflect.Struct {
-		return jCol.parseStruct(reflect.ValueOf(data))
+		return parseStruct("", reflect.ValueOf(data), jCol)
 	}
 	return &UnsupportedColumnTypeError{
 		t: Type(fmt.Sprint(kind)),
@@ -146,6 +159,10 @@ func (jCol *JSONObject) AppendStruct(data interface{}) error {
 type JSONValue struct {
 	col  Interface
 	name string
+}
+
+func (jCol *JSONValue) Name() string {
+	return jCol.name
 }
 
 func (jCol *JSONValue) Type() Type {
@@ -184,77 +201,250 @@ func (jCol *JSONValue) ScanType() reflect.Type {
 	return jCol.col.ScanType()
 }
 
+type JSONList struct {
+	Array
+	name   string
+	values *JSONObject
+}
+
+func (jCol *JSONList) Name() string {
+	return jCol.name
+}
+
+func (jCol *JSONList) upsertValue(name string, kind reflect.Kind, isArray bool) (*JSONValue, error) {
+	// lists are represented as Nested which are in turn encoded as Array(Tuple()). We thus pass a Array(JSONObject())
+	// as this encodes like a tuple
+	ct, ok := typeMapping[kind]
+	if !ok {
+		return nil, &UnsupportedColumnTypeError{
+			t: Type(fmt.Sprint(kind)),
+		}
+	}
+	if isArray {
+		ct = fmt.Sprintf("Array(%s)", typeMapping[kind])
+	}
+	col, err := Type(ct).Column()
+	if err != nil {
+		return nil, err
+	}
+	vCol := &JSONValue{
+		col:  col,
+		name: name,
+	}
+	if jCol.values == nil {
+		//first insert
+		jCol.values = &JSONObject{
+			columns: []Interface{vCol},
+		}
+		return vCol, nil
+	}
+	// check if column exists and reuse if same type, error if same name and different type
+	for i := range jCol.values.columns {
+		sCol, ok := jCol.values.columns[i].(NamedInterface)
+		if !ok {
+			return nil, &UnsupportedColumnTypeError{
+				t: Type(fmt.Sprint(reflect.TypeOf(jCol.values.columns[i]).Kind())),
+			}
+		}
+		if sCol.Name() == name {
+			sCol, ok := jCol.values.columns[i].(*JSONValue)
+			if !ok {
+				return nil, &Error{
+					ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+					Err:        fmt.Errorf("type mismatch in column %s", name),
+				}
+			}
+			if sCol.col.Type() != Type(ct) {
+				return nil, &Error{
+					ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+					Err:        fmt.Errorf("type mismatch in column %s", name),
+				}
+			}
+			return sCol, nil
+		}
+	}
+	jCol.values.columns = append(jCol.values.columns, vCol)
+	return vCol, nil
+}
+
+func (jCol *JSONList) upsertList(name string) (*JSONList, error) {
+	// lists are represented as Nested which are in turn encoded as Array(Tuple()). We thus pass a Array(JSONObject())
+	// as this encodes like a tuple
+	vCol := &JSONList{
+		name: name,
+	}
+	if jCol.values == nil {
+		//first insert
+		jCol.values = &JSONObject{
+			columns: []Interface{vCol},
+		}
+		return vCol, nil
+	}
+	// check if column exists and reuse if same type, error if same name and different type
+	for i := range jCol.values.columns {
+		sCol, ok := jCol.values.columns[i].(NamedInterface)
+		if !ok {
+			return nil, &UnsupportedColumnTypeError{
+				t: Type(fmt.Sprint(reflect.TypeOf(jCol.values.columns[i]).Kind())),
+			}
+		}
+		if sCol.Name() == name {
+			sCol, ok := jCol.values.columns[i].(*JSONList)
+			if !ok {
+				return nil, &Error{
+					ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+					Err:        fmt.Errorf("type mismatch in column %s", name),
+				}
+			}
+			return sCol, nil
+		}
+	}
+	jCol.values.columns = append(jCol.values.columns, vCol)
+	return vCol, nil
+
+}
+
+func (jCol *JSONList) upsertObject(name string) (*JSONObject, error) {
+	// lists are represented as Nested which are in turn encoded as Array(Tuple()). We thus pass a Array(JSONObject())
+	// as this encodes like a tuple
+	vCol := &JSONObject{
+		columns: make([]Interface, 0),
+		name:    name,
+	}
+	if jCol.values == nil {
+		//first insert
+		jCol.values = &JSONObject{
+			columns: []Interface{vCol},
+		}
+		return vCol, nil
+	}
+	// check if column exists and reuse if same type, error if same name and different type
+	for i := range jCol.values.columns {
+		sCol, ok := jCol.values.columns[i].(NamedInterface)
+		if !ok {
+			return nil, &UnsupportedColumnTypeError{
+				t: Type(fmt.Sprint(reflect.TypeOf(jCol.values.columns[i]).Kind())),
+			}
+		}
+		if sCol.Name() == name {
+			sCol, ok := jCol.values.columns[i].(*JSONObject)
+			if !ok {
+				return nil, &Error{
+					ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+					Err:        fmt.Errorf("type mismatch in column %s", name),
+				}
+			}
+			return sCol, nil
+		}
+	}
+	jCol.values.columns = append(jCol.values.columns, vCol)
+	return vCol, nil
+}
+
+func (jCol *JSONList) Type() Type {
+	subTypes := make([]string, len(jCol.values.columns))
+	for i, v := range jCol.values.columns {
+		subTypes[i] = string(v.Type())
+	}
+	return Type(fmt.Sprintf("%s Nested(%s)", jCol.name, strings.Join(subTypes, ", ")))
+}
+
+func (jCol *JSONList) updateOffsets() error {
+	return nil
+}
+
 type JSONObject struct {
 	columns []Interface
 	name    string
-	colType string
 }
 
-func (jCol *JSONObject) upsertSubObject(name string, fType string) (*JSONObject, error) {
+func (jCol *JSONObject) Name() string {
+	return jCol.name
+}
+
+func (jCol *JSONObject) upsertList(name string) (*JSONList, error) {
+	for i := range jCol.columns {
+		sCol, ok := jCol.columns[i].(NamedInterface)
+		if !ok {
+			return nil, &UnsupportedColumnTypeError{
+				t: Type(fmt.Sprint(reflect.TypeOf(jCol.columns[i]).Kind())),
+			}
+		}
+		if sCol.Name() == name {
+			sCol, ok := jCol.columns[i].(*JSONList)
+			if !ok {
+				return nil, &Error{
+					ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+					Err:        fmt.Errorf("type mismatch in column %s", name),
+				}
+			}
+			return sCol, nil
+		}
+	}
+	// not present so create
+	col := &JSONList{
+		name: name,
+	}
+	jCol.columns = append(jCol.columns, col)
+	return col, nil
+}
+
+func (jCol *JSONObject) upsertObject(name string) (*JSONObject, error) {
 	// check if it exists
 	for i := range jCol.columns {
-		switch sCol := (jCol.columns[i]).(type) {
-		case *JSONValue:
-			{
-				if sCol.name == name {
-					return nil, &Error{
-						ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
-						Err:        fmt.Errorf("type mismatch in column %s", name),
-					}
+		sCol, ok := jCol.columns[i].(NamedInterface)
+		if !ok {
+			return nil, &UnsupportedColumnTypeError{
+				t: Type(fmt.Sprint(reflect.TypeOf(jCol.columns[i]).Kind())),
+			}
+		}
+		if sCol.Name() == name {
+			sCol, ok := jCol.columns[i].(*JSONObject)
+			if !ok {
+				return nil, &Error{
+					ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+					Err:        fmt.Errorf("type mismatch in column %s", name),
 				}
 			}
-		case *JSONObject:
-			{
-				if sCol.name == name {
-					return sCol, nil
-				}
-			}
-		default:
-			return nil, &Error{
-				Err:        fmt.Errorf("unexpected type in JSONObject"),
-				ColumnType: string(reflect.ValueOf(sCol).Kind()),
-			}
+			return sCol, nil
 		}
 	}
 	// not present so create
 	col := &JSONObject{
 		columns: make([]Interface, 0),
 		name:    name,
-		colType: fType,
 	}
 	jCol.columns = append(jCol.columns, col)
 	return col, nil
 }
 
-func (jCol *JSONObject) upsetSubValue(name string, kind reflect.Kind, isArray bool) (*JSONValue, error) {
+func (jCol *JSONObject) upsertValue(name string, kind reflect.Kind, isArray bool) (*JSONValue, error) {
 	if ct, ok := typeMapping[kind]; ok {
 		if isArray {
 			ct = fmt.Sprintf("Array(%s)", ct)
 		}
 		for i := range jCol.columns {
-			switch sCol := (jCol.columns[i]).(type) {
-			case *JSONValue:
-				{
-					if sCol.name == name {
-						if sCol.col.Type() != Type(ct) {
-							return nil, &Error{
-								ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
-								Err:        fmt.Errorf("type mismatch in column %s", name),
-							}
-						}
-						// return existing column
-						return sCol, nil
+			sCol, ok := jCol.columns[i].(NamedInterface)
+			if !ok {
+				return nil, &UnsupportedColumnTypeError{
+					t: Type(fmt.Sprint(reflect.TypeOf(jCol.columns[i]).Kind())),
+				}
+			}
+			if sCol.Name() == name {
+				sCol, ok := jCol.columns[i].(*JSONValue)
+				if !ok {
+					return nil, &Error{
+						ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+						Err:        fmt.Errorf("type mismatch in column %s", name),
 					}
 				}
-			case *JSONObject:
-				{
-					if sCol.name == name {
-						return nil, &Error{
-							ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
-							Err:        fmt.Errorf("type mismatch in column %s", name),
-						}
+				if sCol.col.Type() != Type(ct) {
+					return nil, &Error{
+						ColumnType: fmt.Sprint(reflect.ValueOf(sCol).Kind()),
+						Err:        fmt.Errorf("type mismatch in column %s", name),
 					}
 				}
+				return sCol, nil
 			}
 		}
 		col, err := Type(ct).Column()
@@ -280,9 +470,9 @@ func (jCol *JSONObject) Type() Type {
 		subTypes[i] = string(v.Type())
 	}
 	if jCol.name != "" {
-		return Type(fmt.Sprintf("%s %s(%s)", jCol.name, jCol.colType, strings.Join(subTypes, ", ")))
+		return Type(fmt.Sprintf("%s Tuple(%s)", jCol.name, strings.Join(subTypes, ", ")))
 	}
-	return Type(fmt.Sprintf("%s(%s)", jCol.colType, strings.Join(subTypes, ", ")))
+	return Type(fmt.Sprintf("Tuple(%s)", strings.Join(subTypes, ", ")))
 }
 
 func (jCol *JSONObject) ScanType() reflect.Type {
@@ -328,7 +518,7 @@ func (jCol *JSONObject) Append(v interface{}) (nulls []uint8, err error) {
 
 func (jCol *JSONObject) AppendRow(v interface{}) error {
 	if reflect.ValueOf(v).Kind() == reflect.Struct {
-		return jCol.AppendStruct(v)
+		return AppendStruct(jCol, v)
 	}
 	// TODO: support strings and maps
 	return &Error{
@@ -379,5 +569,6 @@ func (jCol *JSONObject) WriteStatePrefix(encoder *binary.Encoder) error {
 
 var (
 	_ Interface           = (*JSONObject)(nil)
+	_ Interface           = (*JSONValue)(nil)
 	_ CustomSerialization = (*JSONObject)(nil)
 )
