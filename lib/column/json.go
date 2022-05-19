@@ -133,7 +133,7 @@ func (jCol *JSONObject) parseStruct(structVal reflect.Value) error {
 	return nil
 }
 
-func (jCol *JSON) AppendStruct(data interface{}) error {
+func (jCol *JSONObject) AppendStruct(data interface{}) error {
 	kind := reflect.ValueOf(data).Kind()
 	if kind == reflect.Struct {
 		return jCol.parseStruct(reflect.ValueOf(data))
@@ -177,25 +177,11 @@ func (jCol *JSONValue) Decode(decoder *binary.Decoder, rows int) error {
 }
 
 func (jCol *JSONValue) Encode(encoder *binary.Encoder) error {
-	if err := encoder.String(jCol.name); err != nil {
-		return err
-	}
-	if err := encoder.String(string(jCol.col.Type())); err != nil {
-		return err
-	}
 	return jCol.col.Encode(encoder)
 }
 
 func (jCol *JSONValue) ScanType() reflect.Type {
 	return jCol.col.ScanType()
-}
-
-type JSON struct {
-	JSONObject
-}
-
-func (jCol *JSON) Type() Type {
-	return "Object('json')"
 }
 
 type JSONObject struct {
@@ -288,25 +274,15 @@ func (jCol *JSONObject) upsetSubValue(name string, kind reflect.Kind, isArray bo
 	}
 }
 
-// TypeMapping utility function to print detected type hierarchy
-func (jCol *JSONObject) TypeMapping() Type {
+func (jCol *JSONObject) Type() Type {
 	subTypes := make([]string, len(jCol.columns))
 	for i, v := range jCol.columns {
-		switch v.(type) {
-		case *JSONObject:
-			subTypes[i] = string(v.(*JSONObject).TypeMapping())
-		default:
-			subTypes[i] = string(v.Type())
-		}
+		subTypes[i] = string(v.Type())
 	}
 	if jCol.name != "" {
 		return Type(fmt.Sprintf("%s %s(%s)", jCol.name, jCol.colType, strings.Join(subTypes, ", ")))
 	}
 	return Type(fmt.Sprintf("%s(%s)", jCol.colType, strings.Join(subTypes, ", ")))
-}
-
-func (jCol *JSONObject) Type() Type {
-	return Type(jCol.colType)
 }
 
 func (jCol *JSONObject) ScanType() reflect.Type {
@@ -352,15 +328,6 @@ func (jCol *JSONObject) Append(v interface{}) (nulls []uint8, err error) {
 
 func (jCol *JSONObject) AppendRow(v interface{}) error {
 	if reflect.ValueOf(v).Kind() == reflect.Struct {
-		panic("Implement me")
-	} else {
-		// handle string here and maybe map
-		panic("Implement me")
-	}
-}
-
-func (jCol *JSON) AppendRow(v interface{}) error {
-	if reflect.ValueOf(v).Kind() == reflect.Struct {
 		return jCol.AppendStruct(v)
 	}
 	// TODO: support strings and maps
@@ -387,3 +354,30 @@ func (jCol *JSONObject) Encode(encoder *binary.Encoder) error {
 	}
 	return nil
 }
+
+func (jCol *JSONObject) ReadStatePrefix(decoder *binary.Decoder) error {
+	for _, c := range jCol.columns {
+		if serialize, ok := c.(CustomSerialization); ok {
+			if err := serialize.ReadStatePrefix(decoder); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (jCol *JSONObject) WriteStatePrefix(encoder *binary.Encoder) error {
+	for _, c := range jCol.columns {
+		if serialize, ok := c.(CustomSerialization); ok {
+			if err := serialize.WriteStatePrefix(encoder); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var (
+	_ Interface           = (*JSONObject)(nil)
+	_ CustomSerialization = (*JSONObject)(nil)
+)
