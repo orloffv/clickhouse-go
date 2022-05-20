@@ -65,11 +65,24 @@ func parseType(name string, kind reflect.Kind, values interface{}, isArray bool,
 	return col.AppendRow(values)
 }
 
-func parseSliceStruct(name string, structVal reflect.Value, jCol JSON) error {
+// returns offset - 	col.Array.offsets[0].values
+func parseSliceStruct(name string, structVal reflect.Value, jCol JSON, first bool) error {
 	col, err := jCol.upsertList(name)
 	if err != nil {
 		return err
 	}
+	if first {
+		//single depth so can take 1st
+		if len(col.offsets[0].values) == 0 {
+			// first entry in the column
+			col.offsets[0].values = []uint64{0}
+		} else {
+			// entry for this object to see offset from last - offsets are cumulative
+			col.offsets[0].values = append(col.offsets[0].values, col.offsets[0].values[len(col.offsets[0].values)-1])
+		}
+	}
+	// increment offset
+	col.offsets[0].values[len(col.offsets[0].values)-1] += 1
 	for i := 0; i < structVal.NumField(); i++ {
 		field := structVal.Field(i)
 		kind := field.Kind()
@@ -100,7 +113,7 @@ func parseSlice(name string, values interface{}, jCol JSON) error {
 	if sKind == reflect.Struct {
 		rValues := reflect.ValueOf(values)
 		for i := 0; i < rValues.Len(); i++ {
-			err := parseSliceStruct(name, rValues.Index(i), jCol)
+			err := parseSliceStruct(name, rValues.Index(i), jCol, i == 0)
 			if err != nil {
 				return err
 			}
@@ -352,8 +365,7 @@ func (jCol *JSONList) upsertObject(name string) (*JSONObject, error) {
 	// lists are represented as Nested which are in turn encoded as Array(Tuple()). We thus pass a Array(JSONObject())
 	// as this encodes like a tuple
 	oCol := &JSONObject{
-		columns: make([]Interface, 0),
-		name:    name,
+		name: name,
 	}
 	jCol.values.(*JSONObject).columns = append(cols, oCol)
 	return oCol, nil
@@ -470,8 +482,7 @@ func (jCol *JSONObject) upsertObject(name string) (*JSONObject, error) {
 	}
 	// not present so create
 	oCol := &JSONObject{
-		columns: make([]Interface, 0),
-		name:    name,
+		name: name,
 	}
 	jCol.columns = append(jCol.columns, oCol)
 	return oCol, nil
