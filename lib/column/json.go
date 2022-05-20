@@ -65,6 +65,17 @@ func parseType(name string, kind reflect.Kind, values interface{}, isArray bool,
 	return col.AppendRow(values)
 }
 
+func (jCol *JSONList) createNewOffset() {
+	//single depth so can take 1st
+	if len(jCol.offsets[0].values) == 0 {
+		// first entry in the column
+		jCol.offsets[0].values = []uint64{0}
+	} else {
+		// entry for this object to see offset from last - offsets are cumulative
+		jCol.offsets[0].values = append(jCol.offsets[0].values, jCol.offsets[0].values[len(jCol.offsets[0].values)-1])
+	}
+}
+
 // returns offset - 	col.Array.offsets[0].values
 func parseSliceStruct(name string, structVal reflect.Value, jCol JSON, first bool) error {
 	col, err := jCol.upsertList(name)
@@ -72,14 +83,7 @@ func parseSliceStruct(name string, structVal reflect.Value, jCol JSON, first boo
 		return err
 	}
 	if first {
-		//single depth so can take 1st
-		if len(col.offsets[0].values) == 0 {
-			// first entry in the column
-			col.offsets[0].values = []uint64{0}
-		} else {
-			// entry for this object to see offset from last - offsets are cumulative
-			col.offsets[0].values = append(col.offsets[0].values, col.offsets[0].values[len(col.offsets[0].values)-1])
-		}
+		col.createNewOffset()
 	}
 	// increment offset
 	col.offsets[0].values[len(col.offsets[0].values)-1] += 1
@@ -112,6 +116,14 @@ func parseSlice(name string, values interface{}, jCol JSON) error {
 	sKind := reflect.TypeOf(values).Elem().Kind()
 	if sKind == reflect.Struct {
 		rValues := reflect.ValueOf(values)
+		if rValues.Len() == 0 {
+			//still need to compute an offset
+			col, err := jCol.upsertList(name)
+			if err != nil {
+				return err
+			}
+			col.createNewOffset()
+		}
 		for i := 0; i < rValues.Len(); i++ {
 			err := parseSliceStruct(name, rValues.Index(i), jCol, i == 0)
 			if err != nil {
