@@ -390,17 +390,13 @@ func (jCol *JSONList) Encode(encoder *binary.Encoder) error {
 }
 
 func (jCol *JSONList) updateOffsets() error {
-	offsetScanTypes := make([]reflect.Type, 0, jCol.depth)
-	jCol.offsets, jCol.scanType = make([]*offset, 0, jCol.depth), jCol.values.ScanType()
-	for i := 0; i < jCol.depth; i++ {
-		jCol.scanType = reflect.SliceOf(jCol.scanType)
-		offsetScanTypes = append(offsetScanTypes, jCol.scanType)
-	}
-	for i := len(offsetScanTypes) - 1; i >= 0; i-- {
-		jCol.offsets = append(jCol.offsets, &offset{
-			scanType: offsetScanTypes[i],
-		})
-	}
+	// depth of 1
+	jCol.scanType = reflect.SliceOf(jCol.values.ScanType())
+	offsetScanTypes := []reflect.Type{jCol.scanType}
+	jCol.offsets = []*offset{&offset{
+		scanType: offsetScanTypes[0],
+		values:   []uint64{uint64(len(jCol.values.(*JSONObject).columns))},
+	}}
 	return nil
 }
 
