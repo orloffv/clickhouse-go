@@ -40,7 +40,7 @@ func TestJSON(t *testing.T) {
 		if err := conn.Exec(ctx, ddl); assert.NoError(t, err) {
 			if batch, err := conn.PrepareBatch(ctx, "INSERT INTO json_test"); assert.NoError(t, err) {
 
-				/*col1Data := TestJSONStruct{
+				col1Data := TestJSONStruct{
 					EventType: "Notify",
 					Actor: Person{
 						Id:      1244,
@@ -53,7 +53,7 @@ func TestJSON(t *testing.T) {
 						{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}}, Friend: Friend{Id: 1244}},
 						{Id: 3433, Name: "Melyvn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
 					},
-				}*/
+				}
 				col2Data := TestJSONStruct{
 					EventType: "PushEvent",
 					Repo:      []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
@@ -71,8 +71,8 @@ func TestJSON(t *testing.T) {
 					},
 				}
 
-				/*				assert.NoError(t, batch.Append(col1Data))
-				 */assert.NoError(t, batch.Append(col2Data))
+				assert.NoError(t, batch.Append(col1Data))
+				assert.NoError(t, batch.Append(col2Data))
 				if assert.NoError(t, batch.Send()) {
 					var (
 						col1 []interface{}
@@ -207,8 +207,8 @@ type Person struct {
 
 type TestJSONStruct struct {
 	EventType    string
-	Actor        Person
-	Repo         []string
+	Actor        Person   `json:"actor"`
+	Repo         []string `json:"-"`
 	Contributors []Person
 }
 
@@ -221,7 +221,7 @@ type InconsistentPerson struct {
 
 type InconsistentTestJSONStruct struct {
 	EventType string
-	Actor     InconsistentPerson
+	Actor     InconsistentPerson `json:"actor"`
 	Repo      []string
 	//Contributors []InconsistentPerson
 }

@@ -76,6 +76,23 @@ func (jCol *JSONList) createNewOffset() {
 	}
 }
 
+func getFieldName(field reflect.StructField) (string, bool) {
+	name := field.Name
+	jsonTag := field.Tag.Get("json")
+	if jsonTag == "" {
+		return name, false
+	}
+	// not a standard but we allow - to omit fields
+	if jsonTag == "-" {
+		return name, true
+	}
+	return jsonTag, false
+}
+
+func omitField() bool {
+	return false
+}
+
 // returns offset - 	col.Array.offsets[0].values
 func parseSliceStruct(name string, structVal reflect.Value, jCol JSON, first bool) error {
 	col, err := jCol.upsertList(name)
@@ -88,9 +105,12 @@ func parseSliceStruct(name string, structVal reflect.Value, jCol JSON, first boo
 	// increment offset
 	col.offsets[0].values[len(col.offsets[0].values)-1] += 1
 	for i := 0; i < structVal.NumField(); i++ {
+		fName, omit := getFieldName(structVal.Type().Field(i))
+		if omit {
+			continue
+		}
 		field := structVal.Field(i)
 		kind := field.Kind()
-		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
 			err := parseStruct(fName, field, col)
@@ -145,10 +165,12 @@ func parseStruct(name string, structVal reflect.Value, jCol JSON) error {
 		return err
 	}
 	for i := 0; i < structVal.NumField(); i++ {
-		// handle the fields in the struct
+		fName, omit := getFieldName(structVal.Type().Field(i))
+		if omit {
+			continue
+		}
 		field := structVal.Field(i)
 		kind := field.Kind()
-		fName := structVal.Type().Field(i).Name
 		value := field.Interface()
 		if kind == reflect.Struct {
 			err = parseStruct(fName, field, col)
@@ -175,10 +197,13 @@ func AppendStruct(jCol *JSONObject, data interface{}) error {
 	if kind == reflect.Struct {
 		rStruct := reflect.ValueOf(data)
 		for i := 0; i < rStruct.NumField(); i++ {
+			fName, omit := getFieldName(rStruct.Type().Field(i))
+			if omit {
+				continue
+			}
 			// handle the fields in the struct
 			field := rStruct.Field(i)
 			kind := field.Kind()
-			fName := rStruct.Type().Field(i).Name
 			value := field.Interface()
 			if kind == reflect.Struct {
 				err := parseStruct(fName, field, jCol)
