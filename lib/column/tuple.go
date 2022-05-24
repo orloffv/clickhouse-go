@@ -28,23 +28,38 @@ import (
 type Tuple struct {
 	chType  Type
 	columns []Interface
+	name    string
+}
+
+func (col *Tuple) Name() string {
+	return col.name
+}
+
+type namedCol struct {
+	name    string
+	colType Type
 }
 
 func (col *Tuple) parse(t Type) (_ Interface, err error) {
 	col.chType = t
 	var (
 		element       []rune
-		elements      []string
+		elements      []namedCol
 		brackets      int
 		appendElement = func() {
 			if len(element) != 0 {
-				name := strings.TrimSpace(string(element))
-				if parts := strings.SplitN(name, " ", 2); len(parts) == 2 {
+				cType := strings.TrimSpace(string(element))
+				name := ""
+				if parts := strings.SplitN(cType, " ", 2); len(parts) == 2 {
 					if !strings.Contains(parts[0], "(") {
-						name = parts[1]
+						name = parts[0]
+						cType = parts[1]
 					}
 				}
-				elements = append(elements, name)
+				elements = append(elements, namedCol{
+					name:    name,
+					colType: Type(strings.TrimSpace(cType)),
+				})
 			}
 		}
 	)
@@ -65,7 +80,7 @@ func (col *Tuple) parse(t Type) (_ Interface, err error) {
 	}
 	appendElement()
 	for _, ct := range elements {
-		column, err := Type(strings.TrimSpace(ct)).Column()
+		column, err := ct.colType.Column(col.name)
 		if err != nil {
 			return nil, err
 		}
@@ -111,11 +126,15 @@ func (col *Tuple) ScanRow(dest interface{}, row int) error {
 		}
 		*d = tuple
 	default:
-		return &ColumnConverterError{
-			Op:   "ScanRow",
-			To:   fmt.Sprintf("%T", dest),
-			From: string(col.chType),
+		kind := reflect.ValueOf(dest).Kind()
+		if kind != reflect.Struct {
+			return &ColumnConverterError{
+				Op:   "ScanRow",
+				To:   fmt.Sprintf("%T", dest),
+				From: string(col.chType),
+			}
 		}
+
 	}
 	return nil
 }

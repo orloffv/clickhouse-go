@@ -39,7 +39,7 @@ func (b *Block) Rows() int {
 }
 
 func (b *Block) AddColumn(name string, ct column.Type) error {
-	column, err := ct.Column()
+	column, err := ct.Column(name)
 	if err != nil {
 		return err
 	}
@@ -156,7 +156,7 @@ func (b *Block) Decode(decoder *binary.Decoder, revision uint64) (err error) {
 		if columnType, err = decoder.String(); err != nil {
 			return err
 		}
-		c, err := column.Type(columnType).Column()
+		c, err := column.Type(columnType).Column(columnName)
 		if err != nil {
 			return err
 		}

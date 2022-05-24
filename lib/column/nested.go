@@ -24,11 +24,12 @@ import (
 
 type Nested struct {
 	Interface
+	name string
 }
 
 func (col *Nested) parse(t Type) (_ Interface, err error) {
 	columns := fmt.Sprintf("Array(Tuple(%s))", strings.Join(nestedColumns(t.params()), ", "))
-	if col.Interface, err = (&Array{}).parse(Type(columns)); err != nil {
+	if col.Interface, err = (&Array{name: col.name}).parse(Type(columns)); err != nil {
 		return nil, err
 	}
 	return col, nil

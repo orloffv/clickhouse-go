@@ -103,9 +103,7 @@ func TestJSONQuery(t *testing.T) {
 		})
 	)
 	if assert.NoError(t, err) {
-		var (
-			col1 []interface{}
-		)
+		var col1 TestJSONStruct
 		if err := conn.QueryRow(ctx, "SELECT * FROM json_test").Scan(&col1); assert.NoError(t, err) {
 			assert.Equal(t, "A", col1)
 		}

@@ -36,6 +36,11 @@ type Array struct {
 	values   Interface
 	offsets  []*offset
 	scanType reflect.Type
+	name     string
+}
+
+func (col *Array) Name() string {
+	return col.name
 }
 
 func (col *Array) parse(t Type) (_ Interface, err error) {
@@ -54,7 +59,7 @@ parse:
 		}
 	}
 	if col.depth != 0 {
-		if col.values, err = Type(typeStr).Column(); err != nil {
+		if col.values, err = Type(typeStr).Column(col.name); err != nil {
 			return nil, err
 		}
 		offsetScanTypes := make([]reflect.Type, 0, col.depth)
@@ -89,7 +94,7 @@ func (col *Array) ScanType() reflect.Type {
 
 func (col *Array) Rows() int {
 	if len(col.offsets) != 0 {
-		return len(col.offsets[0].values)
+		return len(col.offsets[0].values.data)
 	}
 	return 0
 }
@@ -158,10 +163,10 @@ func (col *Array) AppendRow(v interface{}) error {
 func (col *Array) append(elem reflect.Value, level int) error {
 	if level < col.depth {
 		offset := uint64(elem.Len())
-		if ln := len(col.offsets[level].values); ln != 0 {
-			offset += col.offsets[level].values[ln-1]
+		if ln := len(col.offsets[level].values.data); ln != 0 {
+			offset += col.offsets[level].values.data[ln-1]
 		}
-		col.offsets[level].values = append(col.offsets[level].values, offset)
+		col.offsets[level].values.data = append(col.offsets[level].values.data, offset)
 		for i := 0; i < elem.Len(); i++ {
 			if err := col.append(elem.Index(i), level+1); err != nil {
 				return err
@@ -181,8 +186,8 @@ func (col *Array) Decode(decoder *binary.Decoder, rows int) error {
 			return err
 		}
 		switch {
-		case len(offset.values) > 0:
-			rows = int(offset.values[len(offset.values)-1])
+		case len(offset.values.data) > 0:
+			rows = int(offset.values.data[len(offset.values.data)-1])
 		default:
 			rows = 0
 		}
@@ -220,11 +225,11 @@ func (col *Array) WriteStatePrefix(encoder *binary.Encoder) error {
 func (col *Array) make(row uint64, level int) reflect.Value {
 	offset := col.offsets[level]
 	var (
-		end   = offset.values[row]
+		end   = offset.values.data[row]
 		start = uint64(0)
 	)
 	if row > 0 {
-		start = offset.values[row-1]
+		start = offset.values.data[row-1]
 	}
 	var (
 		base  = offset.scanType.Elem()
