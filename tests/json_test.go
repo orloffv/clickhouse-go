@@ -105,7 +105,22 @@ func TestJSONQuery(t *testing.T) {
 	if assert.NoError(t, err) {
 		var col1 TestJSONStruct
 		if err := conn.QueryRow(ctx, "SELECT * FROM json_test").Scan(&col1); assert.NoError(t, err) {
-			assert.Equal(t, "A", col1)
+			bytes, _ := json.Marshal(col1)
+			fmt.Println(string(bytes))
+			assert.Equal(t, TestJSONStruct{
+				EventType: "Notify",
+				Actor: Person{
+					Id:      1244,
+					Name:    "Geoff",
+					Friend:  Friend{Id: 3244},
+					Address: []Address{{City: "Denver", Devices: []Device{{Id: "dwsdswd"}, {Id: "dsdswd"}}}, {City: "Washington", Devices: []Device{{Id: "wwewe"}, {Id: "ewwewe"}}}},
+					Jobs:    []string{"Support Engineer"},
+				},
+				Contributors: []Person{
+					{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}}, Friend: Friend{Id: 1222}},
+					{Id: 3433, Name: "Melyvn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
+				},
+			}, col1)
 		}
 	}
 }
@@ -163,18 +178,18 @@ func TestJSONImitate(t *testing.T) {
 				}
 			}*/
 
-			/*			col1Data := []interface{}{"Notify", []interface{}{uint64(1244), "Geoff", []string{"Support Engineer"}, [][]interface{}{{"Denver"}, {"Washington"}}, []interface{}{uint64(3244)}}, []string{},
-						[][]interface{}{{uint64(2244), "Dale", []string{}, [][]interface{}{{"Lisbon"}, {"Edinburgh"}}, []interface{}{uint64(1244)}},
-							{uint64(3433), "Melyvn", []string{}, [][]interface{}{{"Paris"}, {"Amsterdam"}}, []interface{}{uint64(1244)}}}}*/
-			col2Data := []interface{}{"PushEvent", []interface{}{uint64(2244), "Dale", []string{"Go Driver developer"}, [][]interface{}{{"Lisbon", [][]interface{}{{"abchds"}, {"erferwere"}}}, {"Edinburgh", [][]interface{}{{"swadsds"}, {"sdsd"}}}}, []interface{}{uint64(1244)}}, []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-				[][]interface{}{{uint64(1233), "Thom", []string{}, [][]interface{}{{"Denver", [][]interface{}{{"rwe2e432"}}}}, []interface{}{uint64(3244)}},
-					{uint64(1244), "Geoff", []string{}, [][]interface{}{{"Chicago", [][]interface{}{{"dfsdfsd"}}}, {"NYC", [][]interface{}{{"sdsdsd"}}}}, []interface{}{uint64(3244)}},
-					{uint64(3244), "Melvyn", []string{}, [][]interface{}{{"Paris", [][]interface{}{{"adsd"}}}, {"Amsterdam", [][]interface{}{}}}, []interface{}{uint64(1244)}},
-				}}
+			col1Data := []interface{}{"Notify", []interface{}{uint64(1244), "Geoff", []string{"Support Engineer"}, [][]interface{}{{"Denver"}, {"Washington"}}, []interface{}{uint64(3244)}}, []string{},
+				[][]interface{}{{uint64(2244), "Dale", []string{}, [][]interface{}{{"Lisbon"}, {"Edinburgh"}}, []interface{}{uint64(1244)}},
+					{uint64(3433), "Melyvn", []string{}, [][]interface{}{{"Paris"}, {"Amsterdam"}}, []interface{}{uint64(1244)}}}}
+			/*col2Data := []interface{}{"PushEvent", []interface{}{uint64(2244), "Dale", []string{"Go Driver developer"}, [][]interface{}{{"Lisbon", [][]interface{}{{"abchds"}, {"erferwere"}}}, {"Edinburgh", [][]interface{}{{"swadsds"}, {"sdsd"}}}}, []interface{}{uint64(1244)}}, []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
+			[][]interface{}{{uint64(1233), "Thom", []string{}, [][]interface{}{{"Denver", [][]interface{}{{"rwe2e432"}}}}, []interface{}{uint64(3244)}},
+				{uint64(1244), "Geoff", []string{}, [][]interface{}{{"Chicago", [][]interface{}{{"dfsdfsd"}}}, {"NYC", [][]interface{}{{"sdsdsd"}}}}, []interface{}{uint64(3244)}},
+				{uint64(3244), "Melvyn", []string{}, [][]interface{}{{"Paris", [][]interface{}{{"adsd"}}}, {"Amsterdam", [][]interface{}{}}}, []interface{}{uint64(1244)}},
+			}}*/
 
 			if batch, err := conn.PrepareBatch(ctx, "INSERT INTO json_test"); assert.NoError(t, err) {
 				/*assert.NoError(t, batch.Append(col1Data))*/
-				assert.NoError(t, batch.Append(col2Data))
+				assert.NoError(t, batch.Append(col1Data))
 				if assert.NoError(t, batch.Send()) {
 
 				}
@@ -205,8 +220,8 @@ type Person struct {
 
 type TestJSONStruct struct {
 	EventType    string
-	Actor        Person   `json:"actor"`
-	Repo         []string `json:"-"`
+	Actor        Person `json:"actor"`
+	Repo         []string
 	Contributors []Person
 }
 

@@ -435,29 +435,11 @@ func (jCol *JSONObject) Rows() int {
 }
 
 func (jCol *JSONObject) Row(i int, ptr bool) interface{} {
-	tuple := make([]interface{}, 0, len(jCol.columns))
-	for _, c := range jCol.columns {
-		tuple = append(tuple, c.Row(i, ptr))
-	}
-	return tuple
+	panic("Implement me")
 }
 
 func (jCol *JSONObject) ScanRow(dest interface{}, row int) error {
-	switch d := dest.(type) {
-	case *[]interface{}:
-		tuple := make([]interface{}, 0, len(jCol.columns))
-		for _, c := range jCol.columns {
-			tuple = append(tuple, c.Row(row, false))
-		}
-		*d = tuple
-	default:
-		return &ColumnConverterError{
-			Op:   "ScanRow",
-			To:   fmt.Sprintf("%T", dest),
-			From: string(jCol.Type()),
-		}
-	}
-	return nil
+	panic("Implement me")
 }
 
 func (jCol *JSONObject) Append(_ interface{}) (nulls []uint8, err error) {
@@ -476,12 +458,7 @@ func (jCol *JSONObject) AppendRow(v interface{}) error {
 }
 
 func (jCol *JSONObject) Decode(decoder *binary.Decoder, rows int) error {
-	for _, c := range jCol.columns {
-		if err := c.Decode(decoder, rows); err != nil {
-			return err
-		}
-	}
-	return nil
+	panic("Not implemented")
 }
 
 func (jCol *JSONObject) Encode(encoder *binary.Encoder) error {
