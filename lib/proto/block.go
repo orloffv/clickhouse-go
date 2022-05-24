@@ -43,7 +43,7 @@ func (b *Block) AddColumn(name string, ct column.Type) error {
 	if err != nil {
 		return err
 	}
-	b.Columns = append(b.Columns, column)
+	b.names, b.Columns = append(b.names, name), append(b.Columns, column)
 	return nil
 }
 
