@@ -26,9 +26,9 @@ import (
 )
 
 type Block struct {
+	names   []string
 	Packet  byte
 	Columns []column.Interface
-	names   []string
 }
 
 func (b *Block) Rows() int {
@@ -68,15 +68,7 @@ func (b *Block) Append(v ...interface{}) (err error) {
 }
 
 func (b *Block) ColumnsNames() []string {
-	if len(b.names) == len(b.Columns) {
-		return b.names
-	}
-	names := make([]string, len(b.Columns), len(b.Columns))
-	for i := range b.Columns {
-		names[i] = b.Columns[i].Name()
-	}
-	b.names = names
-	return names
+	return b.names
 }
 
 func (b *Block) Encode(encoder *binary.Encoder, revision uint64) error {
