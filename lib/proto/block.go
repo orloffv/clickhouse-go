@@ -178,7 +178,7 @@ func (b *Block) Decode(decoder *binary.Decoder, revision uint64) (err error) {
 				}
 			}
 		}
-		b.Columns = append(b.Columns, c)
+		b.names, b.Columns = append(b.names, columnName), append(b.Columns, c)
 	}
 	return nil
 }
