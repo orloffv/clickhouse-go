@@ -40,8 +40,7 @@ type DateTime struct {
 }
 
 func (col *DateTime) Name() string {
-	//TODO implement me
-	panic("implement me")
+	return col.name
 }
 
 func (col *DateTime) parse(t Type) (_ *DateTime, err error) {

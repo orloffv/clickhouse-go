@@ -26,9 +26,9 @@ import (
 )
 
 type Block struct {
-	names   []string
 	Packet  byte
 	Columns []column.Interface
+	names   []string
 }
 
 func (b *Block) Rows() int {
@@ -43,7 +43,7 @@ func (b *Block) AddColumn(name string, ct column.Type) error {
 	if err != nil {
 		return err
 	}
-	b.names, b.Columns = append(b.names, name), append(b.Columns, column)
+	b.Columns = append(b.Columns, column)
 	return nil
 }
 
@@ -60,7 +60,7 @@ func (b *Block) Append(v ...interface{}) (err error) {
 			return &BlockError{
 				Op:         "AppendRow",
 				Err:        err,
-				ColumnName: b.names[i],
+				ColumnName: columns[i].Name(),
 			}
 		}
 	}
@@ -68,7 +68,15 @@ func (b *Block) Append(v ...interface{}) (err error) {
 }
 
 func (b *Block) ColumnsNames() []string {
-	return b.names
+	if len(b.names) == len(b.Columns) {
+		return b.names
+	}
+	names := make([]string, len(b.Columns), len(b.Columns))
+	for i := range b.Columns {
+		names[i] = b.Columns[i].Name()
+	}
+	b.names = names
+	return names
 }
 
 func (b *Block) Encode(encoder *binary.Encoder, revision uint64) error {
@@ -95,8 +103,8 @@ func (b *Block) Encode(encoder *binary.Encoder, revision uint64) error {
 	if err := encoder.Uvarint(uint64(rows)); err != nil {
 		return err
 	}
-	for i, c := range b.Columns {
-		if err := encoder.String(b.names[i]); err != nil {
+	for _, c := range b.Columns {
+		if err := encoder.String(c.Name()); err != nil {
 			return err
 		}
 		if err := encoder.String(string(c.Type())); err != nil {
@@ -107,7 +115,7 @@ func (b *Block) Encode(encoder *binary.Encoder, revision uint64) error {
 				return &BlockError{
 					Op:         "Encode",
 					Err:        err,
-					ColumnName: b.names[i],
+					ColumnName: c.Name(),
 				}
 			}
 		}
@@ -115,7 +123,7 @@ func (b *Block) Encode(encoder *binary.Encoder, revision uint64) error {
 			return &BlockError{
 				Op:         "Encode",
 				Err:        err,
-				ColumnName: b.names[i],
+				ColumnName: c.Name(),
 			}
 		}
 	}
@@ -178,7 +186,7 @@ func (b *Block) Decode(decoder *binary.Decoder, revision uint64) (err error) {
 				}
 			}
 		}
-		b.names, b.Columns = append(b.names, columnName), append(b.Columns, c)
+		b.Columns = append(b.Columns, c)
 	}
 	return nil
 }
