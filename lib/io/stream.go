@@ -19,7 +19,6 @@ package io
 
 import (
 	"bufio"
-	"fmt"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/compress"
 	"io"
 )
@@ -29,20 +28,10 @@ const (
 	maxWriterSize = 1 << 20
 )
 
-type DebugWriter struct {
-}
-
-func (db DebugWriter) Write(p []byte) (n int, err error) {
-	fmt.Println()
-	fmt.Println(string(p))
-	return len(p), nil
-}
-
 func NewStream(rw io.ReadWriter) *Stream {
 	stream := Stream{
 		r: bufio.NewReaderSize(rw, maxReaderSize),
 		w: bufio.NewWriterSize(rw, maxWriterSize),
-		p: bufio.NewWriterSize(DebugWriter{}, maxWriterSize),
 	}
 	stream.compress.r = compress.NewReader(stream.r)
 	stream.compress.w = compress.NewWriter(stream.w)
@@ -57,7 +46,6 @@ type Stream struct {
 		r      *compress.Reader
 		w      *compress.Writer
 	}
-	p *bufio.Writer
 }
 
 func (s *Stream) Compress(v bool) {
@@ -75,8 +63,6 @@ func (s *Stream) Write(p []byte) (int, error) {
 	if s.compress.enable {
 		return s.compress.w.Write(p)
 	}
-	fmt.Printf("%x ", p)
-	s.p.Write(p)
 	return s.w.Write(p)
 }
 
@@ -84,7 +70,6 @@ func (s *Stream) Flush() error {
 	if err := s.compress.w.Flush(); err != nil {
 		return err
 	}
-	s.p.Flush()
 	return s.w.Flush()
 }
 
