@@ -161,9 +161,10 @@ func (col *Array) scanJSONStruct(rStruct reflect.Value, row int) error {
 	}
 
 	slice := reflect.MakeSlice(rStruct.Type(), int(end-start), int(end-start))
+	si := 0
 	for i := start; i < end; i++ {
 		sStruct := reflect.New(rStruct.Type().Elem()).Elem()
-		v := slice.Index(int(i))
+		v := slice.Index(si)
 		for _, c := range tCol.columns {
 			sField, ok := getFieldValue(sStruct, c.Name(), c.Type())
 			if !ok {
@@ -179,7 +180,10 @@ func (col *Array) scanJSONStruct(rStruct reflect.Value, row int) error {
 					return err
 				}
 			case *Array:
-				fmt.Println()
+				err := d.scanJSONStruct(sField, int(i))
+				if err != nil {
+					return err
+				}
 			default:
 				value := reflect.ValueOf(c.Row(int(i), false))
 				if value.CanConvert(sField.Type()) {
@@ -194,6 +198,7 @@ func (col *Array) scanJSONStruct(rStruct reflect.Value, row int) error {
 			}
 		}
 		v.Set(sStruct)
+		si++
 	}
 	rStruct.Set(slice)
 	return nil
