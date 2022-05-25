@@ -254,6 +254,85 @@ func (col *Array) make(row uint64, level int) reflect.Value {
 	return slice
 }
 
+func (col *Array) scanJSONSlice(jsonSlice reflect.Value, row int) error {
+	kind := jsonSlice.Kind()
+	if kind != reflect.Slice {
+		return &ColumnConverterError{
+			Op:   "ScanRow",
+			To:   fmt.Sprintf("%T", jsonSlice),
+			From: string(col.Type()),
+		}
+	}
+	// check if we have an array(tuple. This represents a nested.
+	tCol, ok := col.values.(*Tuple)
+	if !ok {
+		// if it is not an array of tuples it will be an array of primitives in json
+		value := reflect.ValueOf(col.Row(row, false))
+		if value.CanConvert(jsonSlice.Type()) {
+			jsonSlice.Set(value.Convert(jsonSlice.Type()))
+			return nil
+		}
+		return &ColumnConverterError{
+			Op:   "ScanRow",
+			To:   fmt.Sprintf("%T", jsonSlice),
+			From: value.Type().String(),
+		}
+	}
+	// Array(Tuple so depth 1 for JSON
+	offset := col.offsets[0]
+	var (
+		end   = offset.values.data[row]
+		start = uint64(0)
+	)
+	if row > 0 {
+		start = offset.values.data[row-1]
+	}
+	if end-start > 0 {
+		slice := reflect.MakeSlice(jsonSlice.Type(), int(end-start), int(end-start))
+		si := 0
+		for i := start; i < end; i++ {
+			sStruct := reflect.New(slice.Type().Elem()).Elem()
+			v := slice.Index(si)
+			for _, c := range tCol.columns {
+				sField, ok := getFieldValue(sStruct, c.Name())
+				if !ok {
+					return &Error{
+						ColumnType: fmt.Sprint(c.Type()),
+						Err:        fmt.Errorf("column %s is not present in the struct %s  - only JSON structures are supported", c.Name(), sStruct),
+					}
+				}
+				switch d := c.(type) {
+				case *Tuple:
+					err := d.scanJSONStruct(sField, int(i))
+					if err != nil {
+						return err
+					}
+				case *Array:
+					err := d.scanJSONSlice(sField, int(i))
+					if err != nil {
+						return err
+					}
+				default:
+					value := reflect.ValueOf(c.Row(int(i), false))
+					if value.CanConvert(sField.Type()) {
+						sField.Set(value.Convert(sField.Type()))
+					} else {
+						return &ColumnConverterError{
+							Op:   "ScanRow",
+							To:   fmt.Sprintf("%T", sField),
+							From: string(col.Type()),
+						}
+					}
+				}
+			}
+			v.Set(sStruct)
+			si++
+		}
+		slice.Set(slice)
+	}
+	return nil
+}
+
 var (
 	_ Interface           = (*Array)(nil)
 	_ CustomSerialization = (*Array)(nil)

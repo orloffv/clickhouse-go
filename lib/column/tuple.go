@@ -117,7 +117,7 @@ func (col *Tuple) Row(i int, ptr bool) interface{} {
 	return tuple
 }
 
-func getFieldValue(field reflect.Value, name string, cType Type) (reflect.Value, bool) {
+func getFieldValue(field reflect.Value, name string) (reflect.Value, bool) {
 	tField := field.Type()
 	for i := 0; i < tField.NumField(); i++ {
 		if jsonTag := tField.Field(i).Tag.Get("json"); jsonTag == name {
@@ -128,87 +128,8 @@ func getFieldValue(field reflect.Value, name string, cType Type) (reflect.Value,
 	return sField, sField.IsValid()
 }
 
-func (col *Array) scanJSONStruct(rStruct reflect.Value, row int) error {
-	kind := rStruct.Kind()
-	if kind != reflect.Slice {
-		return &ColumnConverterError{
-			Op:   "ScanRow",
-			To:   fmt.Sprintf("%T", rStruct),
-			From: string(col.Type()),
-		}
-	}
-	tCol, ok := col.values.(*Tuple)
-	if !ok {
-		value := reflect.ValueOf(col.Row(row, false))
-		if value.CanConvert(rStruct.Type()) {
-			rStruct.Set(value.Convert(rStruct.Type()))
-			return nil
-		}
-		return &ColumnConverterError{
-			Op:   "ScanRow",
-			To:   fmt.Sprintf("%T", rStruct),
-			From: string(col.Type()),
-		}
-	}
-	// Array(Tuple so depth 1 for JSON
-	offset := col.offsets[0]
-	var (
-		end   = offset.values.data[row]
-		start = uint64(0)
-	)
-	if row > 0 {
-		start = offset.values.data[row-1]
-	}
-
-	if end-start > 0 {
-		slice := reflect.MakeSlice(rStruct.Type(), int(end-start), int(end-start))
-		si := 0
-		for i := start; i < end; i++ {
-			sStruct := reflect.New(rStruct.Type().Elem()).Elem()
-			v := slice.Index(si)
-			for _, c := range tCol.columns {
-				sField, ok := getFieldValue(sStruct, c.Name(), c.Type())
-				if !ok {
-					return &Error{
-						ColumnType: fmt.Sprint(c.Type()),
-						Err:        fmt.Errorf("column %s is not present in the struct %s  - only JSON structures are supported", c.Name(), sStruct),
-					}
-				}
-				switch d := c.(type) {
-				case *Tuple:
-					err := d.scanJSONStruct(sField, int(i))
-					if err != nil {
-						return err
-					}
-				case *Array:
-					err := d.scanJSONStruct(sField, int(i))
-					if err != nil {
-						return err
-					}
-				default:
-					value := reflect.ValueOf(c.Row(int(i), false))
-					if value.CanConvert(sField.Type()) {
-						sField.Set(value.Convert(sField.Type()))
-					} else {
-						return &ColumnConverterError{
-							Op:   "ScanRow",
-							To:   fmt.Sprintf("%T", sField),
-							From: string(col.Type()),
-						}
-					}
-				}
-			}
-			v.Set(sStruct)
-			si++
-		}
-		rStruct.Set(slice)
-	}
-
-	return nil
-}
-
-func (col *Tuple) scanJSONStruct(rStruct reflect.Value, row int) error {
-	kind := rStruct.Kind()
+func (col *Tuple) scanJSONStruct(jsonStruct reflect.Value, row int) error {
+	kind := jsonStruct.Kind()
 	if kind != reflect.Struct {
 		return &ColumnConverterError{
 			Op:   "ScanRow",
@@ -216,14 +137,13 @@ func (col *Tuple) scanJSONStruct(rStruct reflect.Value, row int) error {
 			From: string(col.Type()),
 		}
 	}
-
 	for _, c := range col.columns {
 		// the column may be serialized using a different name due to a struct "json" tag
-		sField, ok := getFieldValue(rStruct, c.Name(), c.Type())
+		sField, ok := getFieldValue(jsonStruct, c.Name())
 		if !ok {
 			return &Error{
 				ColumnType: fmt.Sprint(c.Type()),
-				Err:        fmt.Errorf("column %s is not present in the struct %s  - only JSON structures are supported", c.Name(), rStruct),
+				Err:        fmt.Errorf("column %s is not present in the struct %s  - only JSON structures are supported", c.Name(), jsonStruct),
 			}
 		}
 		switch d := c.(type) {
@@ -240,13 +160,13 @@ func (col *Tuple) scanJSONStruct(rStruct reflect.Value, row int) error {
 					Err:        fmt.Errorf("expected Nested to be Array(Tuple) for column %s", c.Name()),
 				}
 			}
-			err := jCol.scanJSONStruct(sField, row)
+			err := jCol.scanJSONSlice(sField, row)
 			if err != nil {
 				return err
 			}
 		case *Array:
 			// can contain array of tuple or primitive types - former happens due to rewrite of Nested to Array(Tuple)
-			err := d.scanJSONStruct(sField, row)
+			err := d.scanJSONSlice(sField, row)
 			if err != nil {
 				return err
 			}
@@ -258,7 +178,7 @@ func (col *Tuple) scanJSONStruct(rStruct reflect.Value, row int) error {
 				return &ColumnConverterError{
 					Op:   "ScanRow",
 					To:   fmt.Sprintf("%T", sField),
-					From: string(col.Type()),
+					From: value.Type().String(),
 				}
 			}
 		}
