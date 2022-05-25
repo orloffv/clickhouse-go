@@ -20,6 +20,7 @@ package column
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/binary"
 )
@@ -106,6 +107,8 @@ func (col *String) AppendRow(v interface{}) error {
 		default:
 			col.data = append(col.data, "")
 		}
+	case time.Time:
+		col.data = append(col.data, v.Format("2006-01-02 15:04:05"))
 	case nil:
 		col.data = append(col.data, "")
 	default:
