@@ -160,47 +160,50 @@ func (col *Array) scanJSONStruct(rStruct reflect.Value, row int) error {
 		start = offset.values.data[row-1]
 	}
 
-	slice := reflect.MakeSlice(rStruct.Type(), int(end-start), int(end-start))
-	si := 0
-	for i := start; i < end; i++ {
-		sStruct := reflect.New(rStruct.Type().Elem()).Elem()
-		v := slice.Index(si)
-		for _, c := range tCol.columns {
-			sField, ok := getFieldValue(sStruct, c.Name(), c.Type())
-			if !ok {
-				return &Error{
-					ColumnType: fmt.Sprint(c.Type()),
-					Err:        fmt.Errorf("column %s is not present in the struct %s  - only JSON structures are supported", c.Name(), sStruct),
+	if end-start > 0 {
+		slice := reflect.MakeSlice(rStruct.Type(), int(end-start), int(end-start))
+		si := 0
+		for i := start; i < end; i++ {
+			sStruct := reflect.New(rStruct.Type().Elem()).Elem()
+			v := slice.Index(si)
+			for _, c := range tCol.columns {
+				sField, ok := getFieldValue(sStruct, c.Name(), c.Type())
+				if !ok {
+					return &Error{
+						ColumnType: fmt.Sprint(c.Type()),
+						Err:        fmt.Errorf("column %s is not present in the struct %s  - only JSON structures are supported", c.Name(), sStruct),
+					}
 				}
-			}
-			switch d := c.(type) {
-			case *Tuple:
-				err := d.scanJSONStruct(sField, int(i))
-				if err != nil {
-					return err
-				}
-			case *Array:
-				err := d.scanJSONStruct(sField, int(i))
-				if err != nil {
-					return err
-				}
-			default:
-				value := reflect.ValueOf(c.Row(int(i), false))
-				if value.CanConvert(sField.Type()) {
-					sField.Set(value.Convert(sField.Type()))
-				} else {
-					return &ColumnConverterError{
-						Op:   "ScanRow",
-						To:   fmt.Sprintf("%T", sField),
-						From: string(col.Type()),
+				switch d := c.(type) {
+				case *Tuple:
+					err := d.scanJSONStruct(sField, int(i))
+					if err != nil {
+						return err
+					}
+				case *Array:
+					err := d.scanJSONStruct(sField, int(i))
+					if err != nil {
+						return err
+					}
+				default:
+					value := reflect.ValueOf(c.Row(int(i), false))
+					if value.CanConvert(sField.Type()) {
+						sField.Set(value.Convert(sField.Type()))
+					} else {
+						return &ColumnConverterError{
+							Op:   "ScanRow",
+							To:   fmt.Sprintf("%T", sField),
+							From: string(col.Type()),
+						}
 					}
 				}
 			}
+			v.Set(sStruct)
+			si++
 		}
-		v.Set(sStruct)
-		si++
+		rStruct.Set(slice)
 	}
-	rStruct.Set(slice)
+
 	return nil
 }
 
