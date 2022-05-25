@@ -19,8 +19,9 @@ package io
 
 import (
 	"bufio"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/compress"
 	"io"
+
+	"github.com/ClickHouse/clickhouse-go/v2/lib/compress"
 )
 
 const (

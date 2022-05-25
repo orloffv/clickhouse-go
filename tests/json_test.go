@@ -2,17 +2,55 @@ package tests
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/column"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 )
 
-type SimpleStruct struct {
-	Name string
+type Releases struct {
+	Version string
+}
+
+type Repository struct {
+	URL      string `json:"url"`
+	Releases []Releases
+}
+
+type Achievement struct {
+	Name        string
+	AwardedDate time.Time
+}
+type Account struct {
+	Id            uint64
+	Name          string
+	Organizations []string `json:"orgs"`
+	Repositories  []Repository
+	Achievement   Achievement
+}
+
+type GithubEvent struct {
+	Title        string
+	Type         string
+	Assignee     Account  `json:"assignee"`
+	Labels       []string `json:"labels"`
+	Contributors []Account
+}
+
+type InconsistentAccount struct {
+	Id            string
+	Name          string
+	Organizations []string `json:"orgs"`
+	Repositories  []Repository
+	Achievement   Achievement
+}
+
+type InconsistentGithubEvent struct {
+	Title        string
+	EventType    string
+	Assignee     InconsistentAccount `json:"assignee"`
+	Labels       []string            `json:"labels"`
+	Contributors []InconsistentAccount
 }
 
 func TestJSON(t *testing.T) {
@@ -33,41 +71,41 @@ func TestJSON(t *testing.T) {
 	conn.Exec(ctx, "DROP TABLE json_test")
 	ddl := `CREATE table json_test(event JSON) ENGINE=Memory;`
 	if assert.NoError(t, err) {
-		//defer func() {
-		//	conn.Exec(ctx, "DROP TABLE json_test")
-		//}()
-
+		defer func() {
+			conn.Exec(ctx, "DROP TABLE json_test")
+		}()
 		if err := conn.Exec(ctx, ddl); assert.NoError(t, err) {
 			if batch, err := conn.PrepareBatch(ctx, "INSERT INTO json_test"); assert.NoError(t, err) {
-
-				col1Data := TestJSONStruct{
-					EventType: "Notify",
-					Actor: Person{
-						Id:      1244,
-						Name:    "Geoff",
-						Friend:  Friend{Id: 3244},
-						Address: []Address{{City: "Denver", Devices: []Device{{Id: "dwsdswd"}, {Id: "dsdswd"}}}, {City: "Washington", Devices: []Device{{Id: "wwewe"}, {Id: "ewwewe"}}}},
-						Jobs:    []string{"Support Engineer"},
+				col1Data := GithubEvent{
+					Title: "Document JSON support",
+					Type:  "Issue",
+					Assignee: Account{
+						Id:            1244,
+						Name:          "Geoff",
+						Achievement:   Achievement{Name: "Mars Star", AwardedDate: time.Now().Truncate(time.Second)},
+						Repositories:  []Repository{{URL: "https://github.com/ClickHouse/clickhouse-python", Releases: []Releases{{Version: "1.0.0"}, {Version: "1.1.0"}}}, {URL: "https://github.com/ClickHouse/clickhouse-go", Releases: []Releases{{Version: "2.0.0"}, {Version: "2.1.0"}}}},
+						Organizations: []string{"Support Engineer", "Integrations"},
 					},
-					Contributors: []Person{
-						{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}}, Friend: Friend{Id: 1244}},
-						{Id: 3433, Name: "Melyvn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
+					Labels: []string{"Help wanted"},
+					Contributors: []Account{
+						{Id: 2244, Achievement: Achievement{Name: "Adding JSON to go driver", AwardedDate: time.Now().Truncate(time.Second).Add(time.Hour * -500)}, Organizations: []string{"Support Engineer", "Consulting", "PM", "Integrations"}, Name: "Dale", Repositories: []Repository{{URL: "https://github.com/ClickHouse/clickhouse-go", Releases: []Releases{{Version: "2.0.0"}, {Version: "2.1.0"}}}, {URL: "https://github.com/ClickHouse/clickhouse-go", Releases: []Releases{{Version: "2.0.0"}, {Version: "2.1.0"}}}}},
+						{Id: 2344, Achievement: Achievement{Name: "Managing S3 buckets", AwardedDate: time.Now().Truncate(time.Second).Add(time.Hour * -500)}, Organizations: []string{"Support Engineer", "Consulting"}, Name: "Melyvn", Repositories: []Repository{{URL: "https://github.com/ClickHouse/support", Releases: []Releases{{Version: "1.0.0"}, {Version: "2.3.0"}, {Version: "2.3.0"}}}}},
 					},
 				}
-				col2Data := TestJSONStruct{
-					EventType: "PushEvent",
-					Repo:      []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-					Actor: Person{
-						Id:      2244,
-						Name:    "Dale",
-						Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}},
-						Friend:  Friend{Id: 1244},
-						Jobs:    []string{"Go Driver developer"},
+				col2Data := GithubEvent{
+					Title: "JSON support",
+					Type:  "Pull Request",
+					Assignee: Account{
+						Id:            2244,
+						Name:          "Dale",
+						Achievement:   Achievement{Name: "Arctic Vault", AwardedDate: time.Now().Truncate(time.Second).Add(time.Hour * -1000)},
+						Repositories:  []Repository{{URL: "https://github.com/grafana/clickhouse", Releases: []Releases{{Version: "1.0.0"}, {Version: "1.4.0"}, {Version: "1.6.0"}}}, {URL: "https://github.com/ClickHouse/clickhouse-go", Releases: []Releases{{Version: "2.0.0"}, {Version: "2.1.0"}}}},
+						Organizations: []string{"Support Engineer", "Integrations"},
 					},
-					Contributors: []Person{
-						{Id: 1233, Name: "Thom", Address: []Address{{City: "Denver", Devices: []Device{{Id: "rwe2e432"}}}}, Friend: Friend{Id: 3244}},
-						{Id: 1244, Name: "Geoff", Address: []Address{{City: "Chicago", Devices: []Device{{Id: "dfsdfsd"}}}, {City: "NYC", Devices: []Device{{Id: "sdsdsd"}}}}, Friend: Friend{Id: 3244}},
-						{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
+					Labels: []string{"Bug"},
+					Contributors: []Account{
+						{Id: 1244, Name: "Geoff", Achievement: Achievement{Name: "Mars Star", AwardedDate: time.Now().Truncate(time.Second).Add(time.Hour * -3000)}, Repositories: []Repository{{URL: "https://github.com/ClickHouse/clickhouse-python", Releases: []Releases{{Version: "1.0.0"}, {Version: "1.1.0"}}}, {URL: "https://github.com/ClickHouse/clickhouse-go", Releases: []Releases{{Version: "2.0.0"}, {Version: "2.1.0"}}}}, Organizations: []string{"Support Engineer", "Integrations"}},
+						{Id: 2244, Achievement: Achievement{Name: "Managing S3 buckets", AwardedDate: time.Now().Truncate(time.Second).Add(time.Hour * -500)}, Organizations: []string{"ClickHouse", "Consulting"}, Name: "Melyvn", Repositories: []Repository{{URL: "https://github.com/ClickHouse/support", Releases: []Releases{{Version: "1.0.0"}, {Version: "2.3.0"}, {Version: "2.3.0"}}}}},
 					},
 				}
 
@@ -75,54 +113,16 @@ func TestJSON(t *testing.T) {
 				assert.NoError(t, batch.Append(col2Data))
 				if assert.NoError(t, batch.Send()) {
 					var (
-						col1 []interface{}
+						col1 GithubEvent
 					)
 					if err := conn.QueryRow(ctx, "SELECT * FROM json_test").Scan(&col1); assert.NoError(t, err) {
-						assert.Equal(t, "A", col1)
+						assert.Equal(t, col1Data, col1)
 					}
 				}
 			}
 		}
 	}
 
-}
-
-func TestJSONQuery(t *testing.T) {
-	var (
-		ctx       = context.Background()
-		conn, err = clickhouse.Open(&clickhouse.Options{
-			Addr:        []string{"127.0.0.1:9000"},
-			DialTimeout: time.Hour,
-			Auth: clickhouse.Auth{
-				Database: "default",
-				Username: "default",
-				Password: "",
-			}, Settings: clickhouse.Settings{
-				"allow_experimental_object_type": 1,
-			},
-		})
-	)
-	if assert.NoError(t, err) {
-		var col1 TestJSONStruct
-		if err := conn.QueryRow(ctx, "SELECT * FROM json_test").Scan(&col1); assert.NoError(t, err) {
-			bytes, _ := json.Marshal(col1)
-			fmt.Println(string(bytes))
-			assert.Equal(t, TestJSONStruct{
-				EventType: "Notify",
-				Actor: Person{
-					Id:      1244,
-					Name:    "Geoff",
-					Friend:  Friend{Id: 3244},
-					Address: []Address{{City: "Denver", Devices: []Device{{Id: "dwsdswd"}, {Id: "dsdswd"}}}, {City: "Washington", Devices: []Device{{Id: "wwewe"}, {Id: "ewwewe"}}}},
-					Jobs:    []string{"Support Engineer"},
-				},
-				Contributors: []Person{
-					{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}}, Friend: Friend{Id: 1222}},
-					{Id: 3433, Name: "Melyvn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
-				},
-			}, col1)
-		}
-	}
 }
 
 func TestJSONImitate(t *testing.T) {
@@ -142,164 +142,45 @@ func TestJSONImitate(t *testing.T) {
 		})
 	)
 	conn.Exec(ctx, "DROP TABLE json_test")
-	ddl := `CREATE table json_test(event Tuple(EventType String, Actor Tuple(Id UInt64, Name String, Jobs Array(String), Address Nested(City String, Devices Nested(Id String)), Friend Tuple(Id UInt64)), Repo Array(String), Contributors Nested(Id UInt64, Name String, Jobs Array(String), Address Nested(City String, Devices Nested(Id String)), Friend Tuple(Id UInt64)))) ENGINE=Memory;`
+	defer func() {
+		conn.Exec(ctx, "DROP TABLE json_test")
+	}()
+	ddl := `CREATE table json_test(event Tuple(Type String, Assignee Tuple(Name UInt64, Name String, Organizations Array(String), Repository Nested(URL String, Devices Nested(Name String)), Achievement Tuple(Name UInt64)), Labels Array(String), Contributors Nested(Name UInt64, Name String, Organizations Array(String), Repository Nested(URL String, Devices Nested(Name String)), Achievement Tuple(Name UInt64)))) ENGINE=Memory;`
 	if assert.NoError(t, err) {
 		if err := conn.Exec(ctx, ddl); assert.NoError(t, err) {
-
-			/*col1Data := TestJSONStruct{
-				EventType: "Notify",
-				Actor: Person{
-					Id:      1244,
-					Name:    "Geoff",
-					Friend:  Friend{Id: 3244},
-					Address: []Address{{City: "Denver", Devices: []Device{{Id: "dwsdswd"}, {Id: "dsdswd"}}}, {City: "Washington", Devices: []Device{{Id: "wwewe"}, {Id: "ewwewe"}}}},
-					Jobs:    []string{"Support Engineer"},
-				},
-				Contributors: []Person{
-					{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}}, Friend: Friend{Id: 1244}},
-					{Id: 3433, Name: "Melyvn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
-				},
-			}
-			col2Data := TestJSONStruct{
-					EventType: "PushEvent",
-					Repo:      []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-					Actor: Person{
-						Id:      2244,
-						Name:    "Dale",
-						Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}},
-						Friend:  Friend{Id: 1244},
-						Jobs:    []string{"Go Driver developer"},
-					},
-					Contributors: []Person{
-						{Id: 1233, Name: "Thom", Address: []Address{{City: "Denver", Devices: []Device{{Id: "rwe2e432"}}}}, Friend: Friend{Id: 3244}},
-						{Id: 1244, Name: "Geoff", Address: []Address{{City: "Chicago", Devices: []Device{{Id: "dfsdfsd"}}}, {City: "NYC", Devices: []Device{{Id: "sdsdsd"}}}}, Friend: Friend{Id: 3244}},
-						{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
-					},
-				}
-			}*/
-
 			col1Data := []interface{}{"Notify", []interface{}{uint64(1244), "Geoff", []string{"Support Engineer"}, [][]interface{}{{"Denver"}, {"Washington"}}, []interface{}{uint64(3244)}}, []string{},
 				[][]interface{}{{uint64(2244), "Dale", []string{}, [][]interface{}{{"Lisbon"}, {"Edinburgh"}}, []interface{}{uint64(1244)}},
 					{uint64(3433), "Melyvn", []string{}, [][]interface{}{{"Paris"}, {"Amsterdam"}}, []interface{}{uint64(1244)}}}}
-			/*col2Data := []interface{}{"PushEvent", []interface{}{uint64(2244), "Dale", []string{"Go Driver developer"}, [][]interface{}{{"Lisbon", [][]interface{}{{"abchds"}, {"erferwere"}}}, {"Edinburgh", [][]interface{}{{"swadsds"}, {"sdsd"}}}}, []interface{}{uint64(1244)}}, []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-			[][]interface{}{{uint64(1233), "Thom", []string{}, [][]interface{}{{"Denver", [][]interface{}{{"rwe2e432"}}}}, []interface{}{uint64(3244)}},
-				{uint64(1244), "Geoff", []string{}, [][]interface{}{{"Chicago", [][]interface{}{{"dfsdfsd"}}}, {"NYC", [][]interface{}{{"sdsdsd"}}}}, []interface{}{uint64(3244)}},
-				{uint64(3244), "Melvyn", []string{}, [][]interface{}{{"Paris", [][]interface{}{{"adsd"}}}, {"Amsterdam", [][]interface{}{}}}, []interface{}{uint64(1244)}},
-			}}*/
 
 			if batch, err := conn.PrepareBatch(ctx, "INSERT INTO json_test"); assert.NoError(t, err) {
-				/*assert.NoError(t, batch.Append(col1Data))*/
 				assert.NoError(t, batch.Append(col1Data))
+				var (
+					col1 GithubEvent
+				)
 				if assert.NoError(t, batch.Send()) {
+					if err := conn.QueryRow(ctx, "SELECT * FROM json_test").Scan(&col1); assert.NoError(t, err) {
 
+					}
 				}
 			}
 		}
 	}
 }
 
-type Device struct {
-	Id string
-}
+/*To test:
 
-type Address struct {
-	City    string
-	Devices []Device
-}
-
-type Friend struct {
-	Id uint64
-}
-type Person struct {
-	Id      uint64
-	Name    string
-	Jobs    []string
-	Address []Address
-	Friend  Friend
-}
-
-type TestJSONStruct struct {
-	EventType    string
-	Actor        Person `json:"actor"`
-	Repo         []string
-	Contributors []Person
-}
-
-type InconsistentPerson struct {
-	Id      string
-	Name    string
-	Address []Address
-	Friend  Friend
-}
-
-type InconsistentTestJSONStruct struct {
-	EventType string
-	Actor     InconsistentPerson `json:"actor"`
-	Repo      []string
-	//Contributors []InconsistentPerson
-}
-
-func TestIterateStruct(t *testing.T) {
-	col1Data := TestJSONStruct{
-		EventType: "Notify",
-		Actor: Person{
-			Id:      1244,
-			Name:    "Geoff",
-			Friend:  Friend{Id: 3244},
-			Address: []Address{{City: "Denver", Devices: []Device{{Id: "dwsdswd"}, {Id: "dsdswd"}}}, {City: "Washington", Devices: []Device{{Id: "wwewe"}, {Id: "ewwewe"}}}},
-			Jobs:    []string{"Support Engineer"},
-		},
-		Contributors: []Person{
-			{Id: 2244, Name: "Dale", Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}}, Friend: Friend{Id: 1244}},
-			{Id: 3433, Name: "Melyvn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
-		},
-	}
-
-	bytes, _ := json.Marshal(col1Data)
-	fmt.Println(string(bytes))
-	cols := &column.JSONObject{}
-	err := column.AppendStruct(cols, col1Data)
-	assert.NoError(t, err)
-	fmt.Println(cols.Type())
-
-	col2Data := TestJSONStruct{
-		EventType: "PushEvent",
-		Repo:      []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-		Actor: Person{
-			Id:      2244,
-			Name:    "Dale",
-			Address: []Address{{City: "Lisbon", Devices: []Device{{Id: "abchds"}, {Id: "erferwere"}}}, {City: "Edinburgh", Devices: []Device{{Id: "swadsds"}, {Id: "sdsd"}}}},
-			Friend:  Friend{Id: 1244},
-			Jobs:    []string{"Go Driver developer"},
-		},
-		Contributors: []Person{
-			{Id: 1233, Name: "Thom", Address: []Address{{City: "Denver", Devices: []Device{{Id: "rwe2e432"}}}}, Friend: Friend{Id: 3244}},
-			{Id: 1244, Name: "Geoff", Address: []Address{{City: "Chicago", Devices: []Device{{Id: "dfsdfsd"}}}, {City: "NYC", Devices: []Device{{Id: "sdsdsd"}}}}, Friend: Friend{Id: 3244}},
-			{Id: 3244, Name: "Melvyn", Address: []Address{{City: "Paris", Devices: []Device{{Id: "adsd"}}}, {City: "Amsterdam"}}, Friend: Friend{Id: 1244}},
-		},
-	}
-	err = column.AppendStruct(cols, col2Data)
-	assert.NoError(t, err)
-	fmt.Println(cols.Type())
-	fmt.Println()
-
-	col3Data := InconsistentTestJSONStruct{
-		EventType: "PushEvent",
-		Actor: InconsistentPerson{
-			Id:   "2244",
-			Name: "Dale",
-			/*			Address: []Address{{City: "Lisbon"}, {City: "Edinburgh"}},
-			 */Friend: Friend{Id: 3244},
-		},
-		Repo: []string{"clickhouse/clickhouse-go", "clickhouse/clickhouse"},
-		/*Contributors: []InconsistentPerson{
-			{Id: "1244", Name: "Thom", Address: []Address{{City: "Denver"}}, Friend: Friend{Id: 3244}},
-			{Id: "1244", Name: "Geoff", Address: []Address{{City: "Chicago"}, {City: "NYC"}}, Friend: Friend{Id: 3244}},
-			{Id: "3244", Name: "Melvyn", Address: []Address{{City: "Paris"}}, Friend: Friend{Id: 1244}},
-		},*/
-	}
-	err = column.AppendStruct(cols, col3Data)
-	assert.Error(t, err)
-	fmt.Println()
-
-}
+1. Inconsistent types ( Non castable)
+2. Castablae types
+3. Inconsistent Structure
+4. Missing field in struct
+5. Multiple row read
+6. Column format
+7. Std interface
+8. Stress test
+9. Ignore unexported fields
+10. test ip and uuid
+11. Typed maps
+12. Point
+12. Big Int
+13. Test point
+*/

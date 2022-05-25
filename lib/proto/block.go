@@ -102,6 +102,7 @@ func (b *Block) Encode(encoder *binary.Encoder, revision uint64) error {
 		if err := encoder.String(string(c.Type())); err != nil {
 			return err
 		}
+		fmt.Println(string(c.Type()))
 		if serialize, ok := c.(column.CustomSerialization); ok {
 			if err := serialize.WriteStatePrefix(encoder); err != nil {
 				return &BlockError{
